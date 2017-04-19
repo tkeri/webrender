@@ -123,7 +123,18 @@ impl Scene {
 
         self.pipeline_auxiliary_lists.insert(pipeline_id, auxiliary_lists);
         self.display_lists.insert(pipeline_id, built_display_list.into_display_items());
-        
+
+        /*let display_list_len = built_display_list.data().len();
+        let aux_list_len = auxiliary_lists.data().len();
+        let (serial_start_time, serial_end_time) = built_display_list.serialization_times();
+
+        let deserial_start_time = precise_time_ns();
+
+        self.pipeline_auxiliary_lists.insert(pipeline_id, auxiliary_lists);
+        self.display_lists.insert(pipeline_id, built_display_list.into_display_items());
+
+        let deserial_end_time = precise_time_ns();*/
+
         let new_pipeline = ScenePipeline {
             pipeline_id: pipeline_id,
             epoch: epoch,

@@ -232,7 +232,7 @@ fn main() {
     };
 
     let size = DeviceUintSize::new(width, height);
-    let (mut renderer, sender) = webrender::renderer::Renderer::new(gl, opts, size).unwrap();
+    let (mut renderer, sender) = webrender::renderer::Renderer::new(&window, opts, size).unwrap();
     let api = sender.create_api();
 
     let notifier = Box::new(Notifier::new(window.create_window_proxy()));
@@ -272,12 +272,12 @@ fn main() {
         builder.new_clip_region(&bounds, vec![complex], Some(mask))
     };
 
-    builder.push_rect(LayoutRect::new(LayoutPoint::new(100.0, 100.0), LayoutSize::new(100.0, 100.0)),
+    /*builder.push_rect(LayoutRect::new(LayoutPoint::new(100.0, 100.0), LayoutSize::new(100.0, 100.0)),
                       sub_clip,
                       ColorF::new(0.0, 1.0, 0.0, 1.0));
     builder.push_rect(LayoutRect::new(LayoutPoint::new(250.0, 100.0), LayoutSize::new(100.0, 100.0)),
                       sub_clip,
-                      ColorF::new(0.0, 1.0, 0.0, 1.0));
+                      ColorF::new(0.0, 1.0, 0.0, 1.0));*/
     let border_side = webrender_traits::BorderSide {
         color: ColorF::new(0.0, 0.0, 1.0, 1.0),
         style: webrender_traits::BorderStyle::Groove,
@@ -300,6 +300,11 @@ fn main() {
                         border_widths,
                         border_details);
 
+    builder.push_rect(
+        LayoutRect::new(LayoutPoint::new(100.0, 250.0), LayoutSize::new(250.0, 200.0)),
+        webrender_traits::ClipRegion::simple(&bounds),
+        ColorF::new(0.0, 0.75, 1.0, 1.0)
+    );
 
     if false { // draw text?
         let font_key = api.generate_font_key();
@@ -418,12 +423,12 @@ fn main() {
                 glutin::Event::Closed |
                 glutin::Event::KeyboardInput(_, _, Some(glutin::VirtualKeyCode::Escape)) |
                 glutin::Event::KeyboardInput(_, _, Some(glutin::VirtualKeyCode::Q)) => break 'outer,
-                glutin::Event::KeyboardInput(glutin::ElementState::Pressed,
+                /*glutin::Event::KeyboardInput(glutin::ElementState::Pressed,
                                              _, Some(glutin::VirtualKeyCode::P)) => {
                     let enable_profiler = !renderer.get_profiler_enabled();
                     renderer.set_profiler_enabled(enable_profiler);
                     api.generate_frame(None);
-                }
+                }*/
                 glutin::Event::Touch(touch) => {
                     match touch_state.handle_event(touch) {
                         TouchResult::Pan(pan) => {
