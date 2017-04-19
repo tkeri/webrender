@@ -52,6 +52,10 @@ impl TexelRect {
             uv1: DevicePoint::new(u1 as f32, v1 as f32),
         }
     }
+
+    pub fn to_vec(&self) -> Vec<f32> {
+        vec!(self.uv0.x, self.uv0.y, self.uv1.x, self.uv1.y)
+    }
 }
 
 /// For external images, it's not possible to know the
@@ -1285,7 +1289,7 @@ impl PrimitiveStore {
 #[derive(Clone)]
 #[repr(C)]
 pub struct GpuBlock16 {
-    data: [f32; 4],
+    pub data: [f32; 4],
 }
 
 impl Default for GpuBlock16 {
@@ -1339,7 +1343,7 @@ impl From<GlyphPrimitive> for GpuBlock16 {
 #[derive(Clone)]
 #[repr(C)]
 pub struct GpuBlock32 {
-    data: [f32; 8],
+    pub data: [f32; 8],
 }
 
 impl Default for GpuBlock32 {
@@ -1393,7 +1397,7 @@ impl From<ClipCorner> for GpuBlock32 {
 #[derive(Clone)]
 #[repr(C)]
 pub struct GpuBlock64 {
-    data: [f32; 16],
+    pub data: [f32; 16],
 }
 
 impl Default for GpuBlock64 {
@@ -1431,7 +1435,7 @@ impl From<BoxShadowPrimitiveGpu> for GpuBlock64 {
 #[derive(Clone)]
 #[repr(C)]
 pub struct GpuBlock128 {
-    data: [f32; 32],
+    pub data: [f32; 32],
 }
 
 impl Default for GpuBlock128 {
