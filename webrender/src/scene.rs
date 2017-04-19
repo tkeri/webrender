@@ -118,7 +118,7 @@ impl Scene {
                             viewport_size: LayerSize) {
 
         self.display_lists.insert(pipeline_id, built_display_list);
-        
+
         let new_pipeline = ScenePipeline {
             pipeline_id: pipeline_id,
             epoch: epoch,

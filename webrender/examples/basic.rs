@@ -252,7 +252,7 @@ fn main() {
     };
 
     let size = DeviceUintSize::new(width, height);
-    let (mut renderer, sender) = webrender::renderer::Renderer::new(gl, opts, size).unwrap();
+    let (mut renderer, sender) = webrender::renderer::Renderer::new(&window, opts, size).unwrap();
     let api = sender.create_api();
 
     let notifier = Box::new(Notifier::new(window.create_window_proxy()));
@@ -282,6 +282,7 @@ fn main() {
     builder.push_rect(LayoutRect::new(LayoutPoint::new(250.0, 100.0), LayoutSize::new(100.0, 100.0)),
                       clip,
                       ColorF::new(0.0, 1.0, 0.0, 1.0));
+
     let border_side = webrender_traits::BorderSide {
         color: ColorF::new(0.0, 0.0, 1.0, 1.0),
         style: webrender_traits::BorderStyle::Groove,
@@ -306,8 +307,7 @@ fn main() {
                         border_widths,
                         border_details);
 
-
-    if false { // draw text?
+    if true { // draw text?
         let font_key = api.generate_font_key();
         let font_bytes = load_file("res/FreeSans.ttf");
         api.add_raw_font(font_key, font_bytes, 0);
@@ -425,12 +425,12 @@ fn main() {
                 glutin::Event::Closed |
                 glutin::Event::KeyboardInput(_, _, Some(glutin::VirtualKeyCode::Escape)) |
                 glutin::Event::KeyboardInput(_, _, Some(glutin::VirtualKeyCode::Q)) => break 'outer,
-                glutin::Event::KeyboardInput(glutin::ElementState::Pressed,
+                /*glutin::Event::KeyboardInput(glutin::ElementState::Pressed,
                                              _, Some(glutin::VirtualKeyCode::P)) => {
                     let enable_profiler = !renderer.get_profiler_enabled();
                     renderer.set_profiler_enabled(enable_profiler);
                     api.generate_frame(None);
-                }
+                }*/
                 glutin::Event::Touch(touch) => {
                     match touch_state.handle_event(touch) {
                         TouchResult::Pan(pan) => {
