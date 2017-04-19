@@ -13,7 +13,6 @@ use mask_cache::MaskCacheInfo;
 use prim_store::{CLIP_DATA_GPU_SIZE, DeferredResolve, GpuBlock128, GpuBlock16, GpuBlock32};
 use prim_store::{GpuBlock64, GradientData, SplitGeometry, PrimitiveCacheKey, PrimitiveGeometry};
 use prim_store::{PrimitiveIndex, PrimitiveKind, PrimitiveMetadata, PrimitiveStore, TexelRect};
-use profiler::FrameProfileCounters;
 use render_task::{AlphaRenderItem, MaskGeometryKind, MaskSegment, RenderTask, RenderTaskData};
 use render_task::{RenderTaskId, RenderTaskIndex, RenderTaskKey, RenderTaskKind};
 use render_task::RenderTaskLocation;
@@ -199,11 +198,13 @@ impl RenderTaskCollection {
     }
 }
 
+#[derive(Debug)]
 struct AlphaBatchTask {
     task_id: RenderTaskId,
     items: Vec<AlphaRenderItem>,
 }
 
+#[derive(Debug)]
 pub struct BatchList {
     pub alpha_batches: Vec<PrimitiveBatch>,
     pub opaque_batches: Vec<PrimitiveBatch>,
@@ -229,11 +230,11 @@ impl BatchList {
                           key: &AlphaBatchKey,
                           item_bounding_rect: &DeviceIntRect) -> &mut PrimitiveBatch {
         let (batches, check_intersections) = match key.blend_mode {
-            BlendMode::None => {
-                (&mut self.opaque_batches, false)
-            }
             BlendMode::Alpha | BlendMode::PremultipliedAlpha | BlendMode::Subpixel(..) => {
                 (&mut self.alpha_batches, true)
+            }
+            _ => {
+                (&mut self.opaque_batches, false)
             }
         };
 
@@ -277,7 +278,8 @@ impl BatchList {
     }
 }
 
-/// Encapsulates the logic of building batches for items that are blended.
+/// Encapsulates the logic of building batches for items that are blended
+#[derive(Debug)]
 pub struct AlphaBatcher {
     pub batch_list: BatchList,
     tasks: Vec<AlphaBatchTask>,
@@ -732,6 +734,7 @@ pub struct RenderTargetContext<'a> {
     pub resource_cache: &'a ResourceCache,
 }
 
+#[derive(Debug)]
 struct TextureAllocator {
     // TODO(gw): Replace this with a simpler allocator for
     // render target allocation - this use case doesn't need
@@ -854,6 +857,7 @@ impl<T: RenderTarget> RenderTargetList<T> {
 }
 
 /// A render target represents a number of rendering operations on a surface.
+#[derive(Debug)]
 pub struct ColorRenderTarget {
     pub alpha_batcher: AlphaBatcher,
     pub box_shadow_cache_prims: Vec<PrimitiveInstance>,
@@ -1248,10 +1252,10 @@ fn textures_compatible(t1: SourceTexture, t2: SourceTexture) -> bool {
 // All Packed Primitives below must be 16 byte aligned.
 #[derive(Debug)]
 pub struct BlurCommand {
-    task_id: i32,
-    src_task_id: i32,
-    blur_direction: i32,
-    padding: i32,
+    pub task_id: i32,
+    pub src_task_id: i32,
+    pub blur_direction: i32,
+    pub padding: i32,
 }
 
 /// A clipping primitive drawn into the clipping mask.
@@ -1259,16 +1263,16 @@ pub struct BlurCommand {
 /// way `address` is treated.
 #[derive(Clone, Copy, Debug)]
 pub struct CacheClipInstance {
-    task_id: i32,
-    layer_index: i32,
-    address: GpuStoreAddress,
-    segment: i32,
+    pub task_id: i32,
+    pub layer_index: i32,
+    pub address: GpuStoreAddress,
+    pub segment: i32,
 }
 
 // 32 bytes per instance should be enough for anyone!
 #[derive(Debug, Clone)]
 pub struct PrimitiveInstance {
-    data: [i32; 8],
+    pub data: [i32; 8],
 }
 
 struct SimplePrimitiveInstance {
@@ -1597,7 +1601,6 @@ pub struct Frame {
     pub device_pixel_ratio: f32,
     pub cache_size: DeviceUintSize,
     pub passes: Vec<RenderPass>,
-    pub profile_counters: FrameProfileCounters,
 
     pub layer_texture_data: Vec<PackedLayer>,
     pub render_task_data: Vec<RenderTaskData>,

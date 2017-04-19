@@ -6,7 +6,6 @@ use app_units::Au;
 use device::TextureFilter;
 use euclid::{TypedPoint2D, UnknownUnit};
 use fnv::FnvHasher;
-use profiler::BackendProfileCounters;
 use std::collections::{HashMap, HashSet};
 use std::f32;
 use std::hash::BuildHasherDefault;
@@ -164,34 +163,20 @@ impl PackedColor {
             a: (0.5 + color.a * COLOR_FLOAT_TO_FIXED).floor() as u8,
         }
     }
-}
 
-// RGBA8 textures currently pack texels in BGRA format for upload.
-// PackedTexel abstracts away this difference from PackedColor.
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct PackedTexel {
-    pub b: u8,
-    pub g: u8,
-    pub r: u8,
-    pub a: u8,
-}
-
-impl PackedTexel {
-    pub fn high_bytes(color: &ColorF) -> PackedTexel {
+    pub fn high_bytes(color: &ColorF) -> PackedColor {
         Self::extract_bytes(color, 8)
     }
 
-    pub fn low_bytes(color: &ColorF) -> PackedTexel {
+    pub fn low_bytes(color: &ColorF) -> PackedColor {
         Self::extract_bytes(color, 0)
     }
 
-    fn extract_bytes(color: &ColorF, shift_by: i32) -> PackedTexel {
-        PackedTexel {
+    fn extract_bytes(color: &ColorF, shift_by: i32) -> PackedColor {
+        PackedColor {
+            r: ((0.5 + color.r * COLOR_FLOAT_TO_FIXED_WIDE).floor() as u32 >> shift_by & 0xff) as u8,
             b: ((0.5 + color.b * COLOR_FLOAT_TO_FIXED_WIDE).floor() as u32 >> shift_by & 0xff) as u8,
             g: ((0.5 + color.g * COLOR_FLOAT_TO_FIXED_WIDE).floor() as u32 >> shift_by & 0xff) as u8,
-            r: ((0.5 + color.r * COLOR_FLOAT_TO_FIXED_WIDE).floor() as u32 >> shift_by & 0xff) as u8,
             a: ((0.5 + color.a * COLOR_FLOAT_TO_FIXED_WIDE).floor() as u32 >> shift_by & 0xff) as u8,
         }
     }
@@ -333,7 +318,7 @@ impl RendererFrame {
 
 pub enum ResultMsg {
     RefreshShader(PathBuf),
-    NewFrame(RendererFrame, TextureUpdateList, BackendProfileCounters),
+    NewFrame(RendererFrame, TextureUpdateList),
 }
 
 #[repr(u32)]

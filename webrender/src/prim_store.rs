@@ -7,7 +7,7 @@ use border::{BorderCornerClipData, BorderCornerDashClipData, BorderCornerDotClip
 use border::BorderCornerInstance;
 use euclid::{Size2D};
 use gpu_store::GpuStoreAddress;
-use internal_types::{SourceTexture, PackedTexel};
+use internal_types::{SourceTexture, PackedColor};
 use mask_cache::{ClipMode, ClipSource, MaskCacheInfo};
 use renderer::{VertexDataStore, GradientDataStore, SplitGeometryStore};
 use render_task::{RenderTask, RenderTaskLocation};
@@ -317,8 +317,8 @@ pub const GRADIENT_DATA_SIZE: usize = GRADIENT_DATA_TABLE_SIZE + 2;
 #[repr(C)]
 // An entry in a gradient data table representing a segment of the gradient color space.
 pub struct GradientDataEntry {
-    pub start_color: PackedTexel,
-    pub end_color: PackedTexel,
+    pub start_color: PackedColor,
+    pub end_color: PackedColor,
 }
 
 #[repr(C)]
@@ -366,8 +366,8 @@ impl GradientData {
         let step_a = (end_color.a - start_color.a) * inv_steps;
 
         let mut cur_color = *start_color;
-        let mut cur_color_high = PackedTexel::high_bytes(&cur_color);
-        let mut cur_color_low = PackedTexel::low_bytes(&cur_color);
+        let mut cur_color_high = PackedColor::high_bytes(&cur_color);
+        let mut cur_color_low = PackedColor::low_bytes(&cur_color);
 
         // Walk the ramp writing start and end colors for each entry.
         for index in start_idx..end_idx {
@@ -380,8 +380,8 @@ impl GradientData {
             cur_color.g += step_g;
             cur_color.b += step_b;
             cur_color.a += step_a;
-            cur_color_high = PackedTexel::high_bytes(&cur_color);
-            cur_color_low = PackedTexel::low_bytes(&cur_color);
+            cur_color_high = PackedColor::high_bytes(&cur_color);
+            cur_color_low = PackedColor::low_bytes(&cur_color);
             high_byte_entry.end_color = cur_color_high;
             low_byte_entry.end_color = cur_color_low;
         }
@@ -1136,9 +1136,9 @@ impl PrimitiveStore {
         &self.cpu_metadata[index.0]
     }
 
-    pub fn prim_count(&self) -> usize {
+    /*pub fn prim_count(&self) -> usize {
         self.cpu_metadata.len()
-    }
+    }*/
 
     pub fn build_bounding_rect(&mut self,
                                prim_index: PrimitiveIndex,
@@ -1392,7 +1392,7 @@ macro_rules! define_gpu_block {
         #[derive(Clone)]
         #[repr(C)]
         pub struct $name {
-            data: $ty,
+            pub data: $ty,
         }
 
         impl Default for $name {
