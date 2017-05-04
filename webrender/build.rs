@@ -76,10 +76,10 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
         let is_frag = filename.ends_with(".fs");
         let is_ps_rect = filename.starts_with("ps_rectangle");
         let is_ps_text_run = filename.starts_with("ps_text_run");
-        let is_ps_image = filename.starts_with("ps_image");
         let is_ps_blend = filename.starts_with("ps_blend");
         let is_ps_hw_composite = filename.starts_with("ps_hardware_composite");
         let is_ps_composite = filename.starts_with("ps_composite");
+        let is_ps_split_composite = filename.starts_with("ps_split_composite");
         // The shader must be primitive or clip (only one of them)
         // and it must be fragment or vertex shader (only one of them), else we skip it.
         if !(is_prim ^ is_clip) || !(is_vert ^ is_frag) {
@@ -113,11 +113,6 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
             build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_SUBPIXEL_AA\n");
         }
 
-        if is_ps_image {
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_TEXTURE_RECT\n");
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_TEXTURE_RECT\n");
-        }
-
         for (iter, config_prefix) in build_configs.iter().enumerate() {
             let mut shader_source = String::new();
             shader_source.push_str(shader_prefix.as_str());
@@ -133,16 +128,17 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
             shader_source.push_str(&get_shader_source(&file_source));
             let mut file_name = String::from(base_filename);
             // The following cases are possible:
-            // 0: Default, transfrom feature is enabled. Except for ps_blend, ps_hw_composite and ps_composite shaders.
+            // 0: Default, transfrom feature is enabled.
+            //    Except for ps_blend, ps_hw_composite, ps_composite and ps_split_composite shaders.
             // 1: If the shader is prim shader, and the transform feature is disabled.
-            //    This is the default case for ps_blend, ps_hw_composite and ps_composite shaders.
+            //    This is the default case for ps_blend, ps_hw_composite, ps_composite and ps_split_composite shaders.
             // 2: If the shader is the `ps_rectangle`/`ps_text_run` shader
             //    and the `clip`/`subpixel AA`, transfrom features are enabled.
             // 3: If the shader is the `ps_rectangle`/`ps_text_run` shader
             //    and the `clip`/`subpixel AA` feature is enabled but the the transfrom feature is disabled.
             match iter {
                 0 => {
-                    if is_prim && !(is_ps_blend || is_ps_hw_composite || is_ps_composite) {
+                    if is_prim && !(is_ps_blend || is_ps_hw_composite || is_ps_composite || is_ps_split_composite) {
                         file_name.push_str("_transform");
                     }
                 },
@@ -154,9 +150,6 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
                     if is_ps_text_run {
                         file_name.push_str("_subpixel_transform");
                     }
-                    if is_ps_image {
-                        file_name.push_str("_rect_transform");
-                    }
                 },
                 3 => {
                     if is_ps_rect {
@@ -164,9 +157,6 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
                     }
                     if is_ps_text_run {
                         file_name.push_str("_subpixel");
-                    }
-                    if is_ps_image {
-                        file_name.push_str("_rect");
                     }
                 },
                 _ => unreachable!(),
