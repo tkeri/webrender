@@ -45,18 +45,19 @@ use gfx::format::ChannelType::Unorm;
 use gfx::format::TextureSurface;
 use tiling::{Frame, PackedLayer, PrimitiveInstance};
 use render_task::RenderTaskData;
-use prim_store::{GpuBlock16, GpuBlock32, GpuBlock64, GpuBlock128, PrimitiveGeometry, TexelRect};
+use prim_store::{GpuBlock16, GpuBlock32, GpuBlock64, GpuBlock128, GradientData, PrimitiveGeometry, TexelRect};
 use renderer::BlendMode;
 
 pub const VECS_PER_LAYER: u32 = 13;
 pub const VECS_PER_RENDER_TASK: u32 = 3;
 pub const VECS_PER_PRIM_GEOM: u32 = 2;
-pub const MAX_INSTANCE_COUNT: usize = 2048;
+pub const MAX_INSTANCE_COUNT: usize = 2000;
 pub const VECS_PER_DATA_16: u32 = 1;
 pub const VECS_PER_DATA_32: u32 = 2;
 pub const VECS_PER_DATA_64: u32 = 4;
 pub const VECS_PER_DATA_128: u32 = 8;
 pub const VECS_PER_RESOURCE_RECTS: u32 = 1;
+pub const VECS_PER_GRADIENT_DATA: u32 = 4;
 pub const FLOAT_SIZE: u32 = 4;
 pub const TEXTURE_HEIGTH: u32 = 8;
 pub const DEVICE_PIXEL_RATIO: f32 = 1.0;
@@ -430,7 +431,7 @@ pub struct Device {
     data64: Texture<R, Rgba32F>,
     data128: Texture<R, Rgba32F>,
     resource_rects: Texture<R, Rgba32F>,
-    gradients: Texture<R, Rgba32F>,
+    gradient_data: Texture<R, Rgba8>,
     max_texture_size: u32,
     main_color: gfx_core::handle::RenderTargetView<R, ColorFormat>,
     main_depth: gfx_core::handle::DepthStencilView<R, DepthFormat>,
@@ -470,12 +471,12 @@ impl Device {
         let dither = Texture::empty(&mut factory, [1024, 1]).unwrap();
         let cache_a8 = Texture::empty(&mut factory, [1024, 1]).unwrap();
         let cache_rgba8 = Texture::empty(&mut factory, [1024, 1]).unwrap();
-        let gradients = Texture::empty(&mut factory, [1024 , 1]).unwrap();
+        let gradient_data = Texture::empty(&mut factory, [1024 / VECS_PER_GRADIENT_DATA as u32 , TEXTURE_HEIGTH * 10]).unwrap();
 
         let layers_tex = Texture::empty(&mut factory, [1024 / VECS_PER_LAYER as u32, 64]).unwrap();
         let render_tasks_tex = Texture::empty(&mut factory, [1024 / VECS_PER_RENDER_TASK as u32, TEXTURE_HEIGTH]).unwrap();
         let prim_geo_tex = Texture::empty(&mut factory, [1024 / VECS_PER_PRIM_GEOM as u32, TEXTURE_HEIGTH]).unwrap();
-        let data16_tex = Texture::empty(&mut factory, [1024 / VECS_PER_DATA_16 as u32, TEXTURE_HEIGTH * 2]).unwrap();
+        let data16_tex = Texture::empty(&mut factory, [1024 / VECS_PER_DATA_16 as u32, TEXTURE_HEIGTH * 4]).unwrap();
         let data32_tex = Texture::empty(&mut factory, [1024 / VECS_PER_DATA_32 as u32, TEXTURE_HEIGTH]).unwrap();
         let data64_tex = Texture::empty(&mut factory, [1024 / VECS_PER_DATA_64 as u32, TEXTURE_HEIGTH]).unwrap();
         let data128_tex = Texture::empty(&mut factory, [1024 / VECS_PER_DATA_128 as u32, TEXTURE_HEIGTH * 4]).unwrap();
@@ -502,7 +503,7 @@ impl Device {
             data64: data64_tex,
             data128: data128_tex,
             resource_rects: resource_rects,
-            gradients: gradients,
+            gradient_data: gradient_data,
             max_texture_size: max_texture_size,
             main_color: main_color,
             main_depth: main_depth,
@@ -552,7 +553,7 @@ impl Device {
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_border_edge_transform.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_border_edge_transform.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_BORDER_EDGE_TRANSFORM);
-        /*device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_angle_gradient.vert")),
+        device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_angle_gradient.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_angle_gradient.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_ANGLE_GRADIENT);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_angle_gradient_transform.vert")),
@@ -588,16 +589,16 @@ impl Device {
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_gradient_transform.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_gradient_transform.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_GRADIENT_TRANSFORM);
-        device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_hardware_composite.vert")),
+        /*device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_hardware_composite.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_hardware_composite.frag")),
-                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_HARDWARE_COMPOSITE);*/
+                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_HARDWARE_COMPOSITE);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_image.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_image.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_IMAGE);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_image_transform.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_image_transform.frag")),
-                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_IMAGE_TRANSFORM);
-        /*device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient.vert")),
+                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_IMAGE_TRANSFORM);*/
+        device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_RADIAL_GRADIENT);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient_transform.vert")),
@@ -612,7 +613,7 @@ impl Device {
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_TEXT_RUN_SUBPIXEL);
-        device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel_transform.vert")),
+        /*device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel_transform.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel_transform.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_TEXT_RUN_SUBPIXEL_TRANSFORM);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_yuv_image.vert")),
@@ -700,7 +701,7 @@ impl Device {
             data64: (self.data64.clone().view, self.data64.clone().sampler),
             data128: (self.data128.clone().view, self.data128.clone().sampler),
             resource_rects: (self.resource_rects.clone().view, self.resource_rects.clone().sampler),
-            gradients: (self.gradients.clone().view, self.gradients.clone().sampler),
+            gradients: (self.gradient_data.clone().view, self.gradient_data.clone().sampler),
             out_color: self.main_color.raw().clone(),
             out_depth: self.main_depth.clone(),
         };
@@ -748,6 +749,7 @@ impl Device {
         Device::update_texture_f32(&mut self.encoder, &self.data64, Device::convert_data64(frame.gpu_data64.clone()).as_slice());
         Device::update_texture_f32(&mut self.encoder, &self.data128, Device::convert_data128(frame.gpu_data128.clone()).as_slice());
         Device::update_texture_f32(&mut self.encoder, &self.resource_rects, Device::convert_resource_rects(frame.gpu_resource_rects.clone()).as_slice());
+        Device::update_texture_u8(&mut self.encoder, &self.gradient_data, Device::convert_gradient_data(frame.gpu_gradient_data.clone()).as_slice());
     }
 
     pub fn flush(&mut self) {
@@ -760,71 +762,36 @@ impl Device {
         println!("proj: {:?}", proj);
         println!("data: {:?}", instances);*/
         if let Some(program) = self.programs.get_mut(program_id) {
-            println!("{:?}", program_id);
-            match * program_id {
-                ProgramId::CS_BLUR |
-                ProgramId::CS_BOX_SHADOW |
-                ProgramId::CS_CLIP_IMAGE |
-                ProgramId::CS_CLIP_RECTANGLE |
-                ProgramId::CS_TEXT_RUN |
-                ProgramId::PS_SPLIT_COMPOSITE |
-                ProgramId::PS_ANGLE_GRADIENT |
-                ProgramId::PS_ANGLE_GRADIENT_TRANSFORM |
-                ProgramId::PS_BLEND |
-                ProgramId::PS_BOX_SHADOW |
-                ProgramId::PS_BOX_SHADOW_TRANSFORM |
-                ProgramId::PS_CACHE_IMAGE |
-                ProgramId::PS_CACHE_IMAGE_TRANSFORM |
-                ProgramId::PS_CLEAR |
-                ProgramId::PS_CLEAR_TRANSFORM |
-                ProgramId::PS_COMPOSITE |
-                ProgramId::PS_GRADIENT |
-                ProgramId::PS_GRADIENT_TRANSFORM |
-                ProgramId::PS_HARDWARE_COMPOSITE |
-                // ProgramId::PS_IMAGE |
-                // ProgramId::PS_IMAGE_TRANSFORM |
-                ProgramId::PS_RADIAL_GRADIENT |
-                ProgramId::PS_RADIAL_GRADIENT_TRANSFORM |
-                // ProgramId::PS_TEXT_RUN |
-                // ProgramId::PS_TEXT_RUN_TRANSFORM |
-                ProgramId::PS_TEXT_RUN_SUBPIXEL |
-                ProgramId::PS_TEXT_RUN_SUBPIXEL_TRANSFORM |
-                ProgramId::PS_YUV_IMAGE |
-                ProgramId::PS_YUV_IMAGE_TRANSFORM
-                => println!("Shader not yet implemented {:?}",  program_id),
-                _ => {
-                    program.data.transform = proj.to_row_arrays();
-                    {
-                        let mut writer = self.factory.write_mapping(&program.upload).unwrap();
-                        //println!("writer: {} instances: {}", writer.len(), instances.len());
-                        for (i, inst) in instances.iter().enumerate() {
-                            //println!("instance[{}]: {:?}", i, inst);
-                            writer[i].update(inst);
-                            //println!("instance[{}]: {:?}", i, writer[i]);
-                        }
-                    }
-                    {
-                        //writer[0].update(&instances[0]);
-                        program.slice.instances = Some((instances.len() as u32, 0));
-                    }
-                    //println!("upload {:?}", &self.upload);
-                    //println!("copy");
-                    if let &BlendMode::Subpixel(ref color) = blendmode {
-                        let _ref_values = RefValues{blend: [color.r, color.g, color.b, color.a], ..RefValues::default()};
-                        //TODO: Update the blending color values with `ref_values`.
-                    }
-
-                    self.encoder.copy_buffer(&program.upload, &program.data.ibuf,
-                                             0, 0, program.upload.len()).unwrap();
-                    /*println!("vbuf {:?}", self.data.vbuf.get_info());
-                    println!("ibuf {:?}", self.data.ibuf);
-                    println!("layers {:?}", self.layers);
-                    println!("render_tasks {:?}", self.render_tasks);
-                    println!("prim_geo {:?}", self.prim_geo);
-                    println!("data16 {:?}", self.data16);*/
-                    self.encoder.draw(&program.slice, &program.get_pso(blendmode), &program.data);
-                },
+            program.data.transform = proj.to_row_arrays();
+            {
+                let mut writer = self.factory.write_mapping(&program.upload).unwrap();
+                //println!("writer: {} instances: {}", writer.len(), instances.len());
+                for (i, inst) in instances.iter().enumerate() {
+                    //println!("instance[{}]: {:?}", i, inst);
+                    writer[i].update(inst);
+                    //println!("instance[{}]: {:?}", i, writer[i]);
+                }
             }
+            {
+                //writer[0].update(&instances[0]);
+                program.slice.instances = Some((instances.len() as u32, 0));
+            }
+            //println!("upload {:?}", &self.upload);
+            //println!("copy");
+            if let &BlendMode::Subpixel(ref color) = blendmode {
+                let _ref_values = RefValues{blend: [color.r, color.g, color.b, color.a], ..RefValues::default()};
+                //TODO: Update the blending color values with `ref_values`.
+            }
+
+            self.encoder.copy_buffer(&program.upload, &program.data.ibuf,
+                                     0, 0, program.upload.len()).unwrap();
+            /*println!("vbuf {:?}", self.data.vbuf.get_info());
+            println!("ibuf {:?}", self.data.ibuf);
+            println!("layers {:?}", self.layers);
+            println!("render_tasks {:?}", self.render_tasks);
+            println!("prim_geo {:?}", self.prim_geo);
+            println!("data16 {:?}", self.data16);*/
+            self.encoder.draw(&program.slice, &program.get_pso(blendmode), &program.data);
         } else {
             println!("Shader not yet implemented {:?}",  program_id);
         }
@@ -871,7 +838,7 @@ impl Device {
         for d in data16 {
             data.append(&mut d.data.to_vec());
         }
-        let max_size = ((1024 / VECS_PER_DATA_16) * FLOAT_SIZE * TEXTURE_HEIGTH * 2) as usize;
+        let max_size = ((1024 / VECS_PER_DATA_16) * FLOAT_SIZE * TEXTURE_HEIGTH * 4) as usize;
         println!("convert_data16 len {:?} max_size: {}", data.len(), max_size);
         if max_size > data.len() {
             let mut zeros = vec![0f32; max_size - data.len()];
@@ -995,6 +962,41 @@ impl Device {
         println!("convert_resource_rects len {:?} max_size: {}", data.len(), max_size);
         if max_size > data.len() {
             let mut zeros = vec![0f32; max_size - data.len()];
+            data.append(&mut zeros);
+        }
+        assert!(data.len() == max_size);
+        data
+    }
+
+    fn convert_gradient_data(gradient_data_vec: Vec<GradientData>) -> Vec<u8> {
+        let mut data: Vec<u8> = vec!();
+        for gradient_data in gradient_data_vec {
+            for entry in gradient_data.colors_high.iter() {
+                data.push(entry.start_color.r);
+                data.push(entry.start_color.g);
+                data.push(entry.start_color.b);
+                data.push(entry.start_color.a);
+                data.push(entry.end_color.r);
+                data.push(entry.end_color.g);
+                data.push(entry.end_color.b);
+                data.push(entry.end_color.a);
+            }
+            for entry in gradient_data.colors_low.iter() {
+                data.push(entry.start_color.r);
+                data.push(entry.start_color.g);
+                data.push(entry.start_color.b);
+                data.push(entry.start_color.a);
+                data.push(entry.end_color.r);
+                data.push(entry.end_color.g);
+                data.push(entry.end_color.b);
+                data.push(entry.end_color.a);
+            }
+            println!("DATA LEN IN ONE ITERATION {:?}", data.len());
+        }
+        let max_size = ((1024 / VECS_PER_GRADIENT_DATA) * 4 * TEXTURE_HEIGTH * 10) as usize;
+        println!("convert_gradient_data len {:?} max_size: {}", data.len(), max_size);
+        if max_size > data.len() {
+            let mut zeros = vec![0u8; max_size - data.len()];
             data.append(&mut zeros);
         }
         assert!(data.len() == max_size);
