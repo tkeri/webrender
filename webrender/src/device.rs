@@ -619,7 +619,7 @@ impl Device {
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_CLEAR_TRANSFORM);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_composite.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_composite.frag")),
-                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_COMPOSITE);
+                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_COMPOSITE);*/
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_gradient.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_gradient.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_GRADIENT);
@@ -628,32 +628,32 @@ impl Device {
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_GRADIENT_TRANSFORM);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_hardware_composite.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_hardware_composite.frag")),
-                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_HARDWARE_COMPOSITE);*/
+                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_HARDWARE_COMPOSITE);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_image.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_image.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_IMAGE);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_image_transform.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_image_transform.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_IMAGE_TRANSFORM);
-        /*device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient.vert")),
+        device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_RADIAL_GRADIENT);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient_transform.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_radial_gradient_transform.frag")),
-                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_RADIAL_GRADIENT_TRANSFORM);*/
+                           vertex_buffer.clone(), slice.clone(), ProgramId::PS_RADIAL_GRADIENT_TRANSFORM);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_TEXT_RUN);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_transform.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_transform.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_TEXT_RUN_TRANSFORM);
-        device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel.vert")),
+        /*device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_TEXT_RUN_SUBPIXEL);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel_transform.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_text_run_subpixel_transform.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_TEXT_RUN_SUBPIXEL_TRANSFORM);
-        /*device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_yuv_image.vert")),
+        device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_yuv_image.vert")),
                            include_bytes!(concat!(env!("OUT_DIR"), "/ps_yuv_image.frag")),
                            vertex_buffer.clone(), slice.clone(), ProgramId::PS_YUV_IMAGE);
         device.add_program(include_bytes!(concat!(env!("OUT_DIR"), "/ps_yuv_image_transform.vert")),
@@ -780,7 +780,8 @@ impl Device {
             //let texture = self.create_texture::<Rgba8>(gfx::texture::Kind::D2(w as u16, h as u16, gfx::texture::AaMode::Single)).unwrap();
             let stride = match format {
                 ImageFormat::A8 => A8_STRIDE,
-                _ => RGBA8_STRIDE,
+                ImageFormat::RGBA8 => RGBA8_STRIDE,
+                _ => unimplemented!(),
             };
             let texture_data = vec![0u8; (w*h*stride) as usize];
 
@@ -794,6 +795,31 @@ impl Device {
         texture_ids
     }
 
+    pub fn create_texture_id(&mut self,
+                             _target: TextureTarget,
+                             format: ImageFormat) -> TextureId {
+        let mut texture_ids = Vec::new();
+
+        let (w, h) = self.color0.get_size();
+        let texture_id = self.generate_texture_id();
+
+        //let texture = self.create_texture::<Rgba8>(gfx::texture::Kind::D2(w as u16, h as u16, gfx::texture::AaMode::Single)).unwrap();
+        let stride = match format {
+            ImageFormat::A8 => A8_STRIDE,
+            ImageFormat::RGBA8 => RGBA8_STRIDE,
+            _ => unimplemented!(),
+        };
+        let texture_data = vec![0u8; (w*h*stride) as usize];
+
+        debug_assert!(self.textures.contains_key(&texture_id) == false);
+        self.textures.insert(texture_id, TextureData {id: texture_id, data: texture_data, stride: stride });
+        //println!("after instert {:?} ts:{:?} s:{:?} {:?}", self.textures[&texture_id].id, self.textures[&texture_id].stride, stride, format);
+
+        texture_ids.push(texture_id);
+
+        texture_id
+    }
+
     pub fn init_texture(&mut self,
                         texture_id: TextureId,
                         _width: u32,
@@ -805,7 +831,8 @@ impl Device {
         let texture = self.textures.get_mut(&texture_id).expect("Didn't find texture!");
         let stride = match format {
             ImageFormat::A8 => A8_STRIDE,
-            _ => RGBA8_STRIDE,
+            ImageFormat::RGBA8 => RGBA8_STRIDE,
+            _ => unimplemented!(),
         };
         if stride != texture.stride {
             texture.stride = stride;
@@ -842,9 +869,10 @@ impl Device {
             Some(value) => value / bpp,
             None => width,
         };*/
-        let converted_data = Device::update_texture_data(width, height, w, h, data, texture.stride);
+        /*let converted_data = */Device::update_texture_data(&mut texture.data, x0, y0, width, height, w, h, data, texture.stride);
         //println!("update_texture id:{:?} {} {}", texture_id, texture.data.len(), converted_data.len());
-        mem::replace(&mut texture.data, converted_data);
+        
+        //mem::replace(&mut texture.data, converted_data);
     }
 
     pub fn resize_texture(&mut self,
@@ -867,15 +895,26 @@ impl Device {
         mem::replace(&mut texture.data, data.to_vec());
     }
 
-    fn update_texture_data(width: u32, height: u32, max_width: u32, max_height: u32, new_data: &[u8], stride: u32) -> Vec<u8> {
-        let mut data = vec![0u8; (max_width*max_height*stride) as usize];
-        //println!("update_texture_data width:{:?} height:{:?} max_width:{:?} max_height:{:?} new_data:{:?} stride:{:?}", width, height, max_width, max_height, new_data.len(), stride);
+    fn update_texture_data(data: &mut [u8], x_offset: u32, y_offset: u32, width: u32, height: u32, max_width: u32, max_height: u32, new_data: &[u8], stride: u32)/* -> Vec<u8>*/ {
+        //let mut data = vec![0u8; (max_width*max_height*stride) as usize];
+        assert_eq!(width * height * stride, new_data.len() as u32);
         for j in 0..height {
             for i in 0..width*stride {
-                data[(i+j*max_width*stride) as usize] = new_data[(i+j*width*stride) as usize];
+                let k = {
+                    if stride == 1 {
+                        i
+                    } else if i % 4 == 0 {
+                        i + 2
+                    } else if i % 4 == 2 {
+                        i - 2
+                    } else {
+                        i
+                    }
+                };
+                data[((i+x_offset*stride)+(j+y_offset)*max_width*stride) as usize] = new_data[(k+j*width*stride) as usize];
             }
         }
-        data.to_vec()
+        /*data.to_vec()*/
     }
 
     pub fn bind_texture(&mut self,
@@ -917,7 +956,7 @@ impl Device {
     }
 
     pub fn update(&mut self, frame: &mut Frame) {
-        println!("update!");
+        /*println!("update!");
         println!("gpu_data16.len {}", frame.gpu_data16.len());
         println!("gpu_data32.len {}", frame.gpu_data32.len());
         println!("gpu_data64.len {}", frame.gpu_data64.len());
@@ -927,7 +966,7 @@ impl Device {
         println!("layer_texture_data.len {}", frame.layer_texture_data.len());
         println!("render_task_data.len {}", frame.render_task_data.len());
         println!("gpu_gradient_data.len {}", frame.gpu_gradient_data.len());
-        println!("device_pixel_ratio: {}", frame.device_pixel_ratio);
+        println!("device_pixel_ratio: {}", frame.device_pixel_ratio);*/
         Device::update_texture_f32(&mut self.encoder, &self.layers, Device::convert_layer(frame.layer_texture_data.clone()).as_slice());
         Device::update_texture_f32(&mut self.encoder, &self.render_tasks, Device::convert_render_task(frame.render_task_data.clone()).as_slice());
         Device::update_texture_f32(&mut self.encoder, &self.prim_geo, Device::convert_prim_geo(frame.gpu_geometry.clone()).as_slice());
@@ -1160,7 +1199,8 @@ impl Device {
     fn convert_resource_rects(resource_rects: Vec<TexelRect>) -> Vec<f32> {
         let mut data: Vec<f32> = vec!();
         for r in resource_rects {
-            data.append(&mut r.to_vec());
+            data.append(&mut r.uv0.to_array().to_vec());
+            data.append(&mut r.uv1.to_array().to_vec());
         }
         let max_size = ((1024 / VECS_PER_RESOURCE_RECTS) * FLOAT_SIZE * TEXTURE_HEIGTH * 2) as usize;
         println!("convert_resource_rects len {:?} max_size: {}", data.len(), max_size);
@@ -1195,7 +1235,6 @@ impl Device {
                 data.push(entry.end_color.b);
                 data.push(entry.end_color.a);
             }
-            println!("DATA LEN IN ONE ITERATION {:?}", data.len());
         }
         let max_size = ((1024 / VECS_PER_GRADIENT_DATA) * 4 * TEXTURE_HEIGTH * 10) as usize;
         println!("convert_gradient_data len {:?} max_size: {}", data.len(), max_size);

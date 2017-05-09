@@ -596,8 +596,9 @@ impl Renderer {
                         let CacheTextureId(cache_texture_index) = update.id;
                         if self.cache_texture_id_map.len() == cache_texture_index {
                             // Create a new native texture, as requested by the texture cache.
-                            let texture_id = self.device
-                                                 .create_texture_ids(1, TextureTarget::Default, format)[0];
+                            /*let texture_id = self.device
+                                                 .create_texture_ids(1, TextureTarget::Default, format)[0];*/
+                            let texture_id = self.device.create_texture_id(TextureTarget::Default, format);
                             self.cache_texture_id_map.push(texture_id);
                         }
                         let texture_id = self.cache_texture_id_map[cache_texture_index];
@@ -666,6 +667,7 @@ impl Renderer {
                     }
                     TextureUpdateOp::Update { page_pos_x, page_pos_y, width, height, data, stride, offset } => {
                         let texture_id = self.cache_texture_id_map[update.id.0];
+                        //println!("UPDATE texture upadte texture_id: {:?}, page_pos_x: {:?}, page_pos_y: {:?}, width: {:?}, height: {:?}, stride: {:?}",texture_id, page_pos_x, page_pos_y, width, height, stride);
                         self.device.update_texture(texture_id,
                                                    page_pos_x,
                                                    page_pos_y,
@@ -1222,7 +1224,7 @@ impl Renderer {
                     pass.color_texture_id = Some(self.color_render_targets
                                                      .pop()
                                                      .unwrap_or_else(|| {
-                                                         TextureId::invalid()
+                                                         self.device.create_texture_id(TextureTarget::Default, ImageFormat::RGBA8)
                                                       }));
                 }
 
@@ -1230,7 +1232,7 @@ impl Renderer {
                     pass.alpha_texture_id = Some(self.alpha_render_targets
                                                      .pop()
                                                      .unwrap_or_else(|| {
-                                                         TextureId::invalid_a8()
+                                                         self.device.create_texture_id(TextureTarget::Default, ImageFormat::A8)
                                                       }));
                 }
             }
