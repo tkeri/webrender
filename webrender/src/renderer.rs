@@ -9,12 +9,11 @@
 //!
 //! [renderer]: struct.Renderer.html
 
-// use debug_colors;
-// use debug_render::DebugRenderer;
-// use device::{DepthFunction, Device, FrameId, ProgramId, TextureId, VertexFormat, GpuMarker, GpuProfiler};
-// use device::{GpuSample, TextureFilter, VAOId, VertexUsageHint, FileWatcherHandler, TextureTarget, ShaderError};
-
 use device::{Device, TextureId, TextureFilter, TextureTarget, Program, ShaderError};
+use device::{VECS_PER_DATA_16, VECS_PER_DATA_32, VECS_PER_DATA_64, VECS_PER_DATA_128};
+use device::{VECS_PER_LAYER, VECS_PER_PRIM_GEOM, VECS_PER_RENDER_TASK};
+use device::{VECS_PER_RESOURCE_RECTS, VECS_PER_GRADIENT_DATA, VECS_PER_SPLIT_GEOM};
+use device::{A8_STRIDE, RGBA8_STRIDE};
 use euclid::Matrix4D;
 use fnv::FnvHasher;
 use frame_builder::FrameBuilderConfig;
@@ -23,40 +22,37 @@ use gpu_store::{GpuStore, GpuStoreLayout};
 use internal_types::{CacheTextureId, RendererFrame, ResultMsg, TextureUpdateOp};
 use internal_types::{TextureUpdateList, PackedVertex, RenderTargetMode};
 use internal_types::{ORTHO_NEAR_PLANE, ORTHO_FAR_PLANE, SourceTexture};
-use internal_types::/*{BatchTextures, TextureSampler};*/TextureSampler;
+use internal_types::TextureSampler;
 use prim_store::{GradientData, SplitGeometry};
 use record::ApiRecordingReceiver;
 use render_backend::RenderBackend;
 use render_task::RenderTaskData;
 use std;
 use std::cmp;
-use std::collections::/*{HashMap, VecDeque};*/HashMap;
+use std::collections::HashMap;
 use std::f32;
 use std::hash::BuildHasherDefault;
 use std::marker::PhantomData;
 use std::mem;
 use std::path::PathBuf;
-//use std::rc::Rc;
+use std::slice;
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{channel, Receiver/*, Sender*/};
+use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 use texture_cache::TextureCache;
 use rayon::ThreadPool;
 use rayon::Configuration as ThreadPoolConfig;
-use tiling::{AlphaBatchKind/*, BlurCommand*/, Frame, PrimitiveBatch/*, RenderTarget*/};
-use tiling::{AlphaRenderTarget/*, CacheClipInstance, PrimitiveInstance*/, ColorRenderTarget, RenderTargetKind};
-//use time::precise_time_ns;
-use thread_profiler::{register_thread_with_profiler/*, write_profile*/};
+use tiling::{AlphaBatchKind, Frame, PrimitiveBatch};
+use tiling::{AlphaRenderTarget, ColorRenderTarget, RenderTargetKind};
+use thread_profiler::{register_thread_with_profiler};
 use util::TransformedRectKind;
 use webgl_types::GLContextHandleWrapper;
 use webrender_traits::{ColorF, Epoch, PipelineId, RenderNotifier, RenderDispatcher};
 use webrender_traits::{ExternalImageId, ExternalImageType, ImageData, ImageFormat, RenderApiSender};
-use webrender_traits::{/*DeviceIntRect,*/ DevicePoint/*, DeviceIntPoint, DeviceIntSize*/, DeviceUintSize};
-use webrender_traits::/*{ImageDescriptor, BlobImageRenderer};*/BlobImageRenderer;
+use webrender_traits::{DevicePoint, DeviceUintSize};
+use webrender_traits::BlobImageRenderer;
 use webrender_traits::{channel, FontRenderMode};
 use webrender_traits::VRCompositorHandler;
-//use webrender_traits::{YuvColorSpace, YuvFormat};
-//use webrender_traits::{YUV_COLOR_SPACES, YUV_FORMATS};
 
 use glutin;
 
@@ -142,8 +138,7 @@ struct GpuDataTexture<L> {
 
 impl<L: GpuStoreLayout> GpuDataTexture<L> {
     fn new(device: &mut Device) -> GpuDataTexture<L> {
-        //let id = device.create_texture_ids(1, TextureTarget::Default)[0];
-
+        // TODO we dont need this
         GpuDataTexture {
             id: TextureId::invalid(),
             layout: PhantomData,
@@ -152,7 +147,9 @@ impl<L: GpuStoreLayout> GpuDataTexture<L> {
 
     fn init<T: Default>(&mut self,
                         device: &mut Device,
-                        data: &mut Vec<T>) {
+                        sampler: TextureSampler,
+                        data: &mut Vec<T>,
+                        size: u32) {
         if data.is_empty() {
             return;
         }
@@ -175,13 +172,17 @@ impl<L: GpuStoreLayout> GpuDataTexture<L> {
             data.len() * rows_per_item
         };
 
-        /*device.init_texture(self.id,
-                            L::texture_width::<T>() as u32,
-                            height as u32,
-                            L::image_format(),
-                            L::texture_filter(),
-                            RenderTargetMode::None,
-                            Some(unsafe { mem::transmute(data.as_slice()) } ));*/
+        match L::image_format() {
+            ImageFormat::RGBAF32 => {
+                device.update_sampler_f32(sampler,
+                                          unsafe { slice::from_raw_parts(data.as_ptr() as *const f32, data.len() * size as usize) });
+            },
+            ImageFormat::RGBA8 => {
+                device.update_sampler_u8(sampler,
+                                         unsafe { slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * size as usize) });
+            },
+            _ => unimplemented!(), // Invalid, A8, RGB8, RG8
+        }
     }
 }
 
@@ -242,6 +243,59 @@ impl GpuStoreLayout for SplitGeometryTextureLayout {
 
 type SplitGeometryTexture = GpuDataTexture<SplitGeometryTextureLayout>;
 pub type SplitGeometryStore = GpuStore<SplitGeometry, SplitGeometryTextureLayout>;
+
+struct GpuDataTextures {
+    layer_texture: VertexDataTexture,
+    render_task_texture: VertexDataTexture,
+    prim_geom_texture: VertexDataTexture,
+    data16_texture: VertexDataTexture,
+    data32_texture: VertexDataTexture,
+    data64_texture: VertexDataTexture,
+    data128_texture: VertexDataTexture,
+    resource_rects_texture: VertexDataTexture,
+    gradient_data_texture: GradientDataTexture,
+    split_geometry_texture: SplitGeometryTexture,
+}
+
+impl GpuDataTextures {
+    fn new(device: &mut Device) -> GpuDataTextures {
+        GpuDataTextures {
+            layer_texture: VertexDataTexture::new(device),
+            render_task_texture: VertexDataTexture::new(device),
+            prim_geom_texture: VertexDataTexture::new(device),
+            data16_texture: VertexDataTexture::new(device),
+            data32_texture: VertexDataTexture::new(device),
+            data64_texture: VertexDataTexture::new(device),
+            data128_texture: VertexDataTexture::new(device),
+            resource_rects_texture: VertexDataTexture::new(device),
+            gradient_data_texture: GradientDataTexture::new(device),
+            split_geometry_texture: SplitGeometryTexture::new(device),
+        }
+    }
+
+    fn init_frame(&mut self, device: &mut Device, frame: &mut Frame) {
+        //println!("gpu_data16 {:?}", frame.gpu_data16);
+        self.data16_texture.init(device, TextureSampler::Data16, &mut frame.gpu_data16, VECS_PER_DATA_16 * RGBA8_STRIDE);
+        //println!("gpu_data32 {:?}", frame.gpu_data32);
+        self.data32_texture.init(device, TextureSampler::Data32, &mut frame.gpu_data32, VECS_PER_DATA_32 * RGBA8_STRIDE);
+        //println!("gpu_data64 {:?}", frame.gpu_data64);
+        self.data64_texture.init(device, TextureSampler::Data64, &mut frame.gpu_data64, VECS_PER_DATA_64 * RGBA8_STRIDE);
+        //println!("gpu_data64 {:?}", frame.gpu_data64);
+        self.data128_texture.init(device, TextureSampler::Data128, &mut frame.gpu_data128, VECS_PER_DATA_128 * RGBA8_STRIDE);
+        //println!("gpu_geometry {:?}", frame.gpu_geometry);
+        self.prim_geom_texture.init(device, TextureSampler::Geometry, &mut frame.gpu_geometry, VECS_PER_PRIM_GEOM * RGBA8_STRIDE);
+        //println!("gpu_resource_rects {:?}", frame.gpu_resource_rects);
+        self.resource_rects_texture.init(device, TextureSampler::ResourceRects, &mut frame.gpu_resource_rects, VECS_PER_RESOURCE_RECTS * RGBA8_STRIDE);
+        //println!("layer_texture_data {:?}", frame.layer_texture_data);
+        self.layer_texture.init(device, TextureSampler::Layers, &mut frame.layer_texture_data, VECS_PER_LAYER * RGBA8_STRIDE);
+        //println!("render_task_data {:?}", frame.render_task_data);
+        self.render_task_texture.init(device, TextureSampler::RenderTasks, &mut frame.render_task_data, VECS_PER_RENDER_TASK * RGBA8_STRIDE);
+        //println!("gpu_gradient_data {:?}", frame.gpu_gradient_data);
+        self.gradient_data_texture.init(device, TextureSampler::Gradients, &mut frame.gpu_gradient_data, VECS_PER_GRADIENT_DATA * A8_STRIDE);
+        //println!("gpu_split_geometry {:?}", frame.gpu_split_geometry);
+        self.split_geometry_texture.init(device, TextureSampler::SplitGeometry, &mut frame.gpu_split_geometry, VECS_PER_SPLIT_GEOM * RGBA8_STRIDE);
+    }
+}
 
 /// The renderer is responsible for submitting to the GPU the work prepared by the
 /// RenderBackend.
@@ -304,6 +358,8 @@ pub struct Renderer {
 
     color_render_targets: Vec<TextureId>,
     alpha_render_targets: Vec<TextureId>,
+
+    gpu_data_textures: GpuDataTextures,
 
     pipeline_epoch_map: HashMap<PipelineId, Epoch, BuildHasherDefault<FnvHasher>>,
     /// Used to dispatch functions to the main thread's event loop.
@@ -423,7 +479,7 @@ impl Renderer {
                  create_programs!(device, "ps_angle_gradient"),
                  create_programs!(device, "ps_radial_gradient"))
             };
-        
+
         let ps_box_shadow = create_programs!(device, "ps_box_shadow");
         let ps_cache_image = create_programs!(device, "ps_cache_image");
 
@@ -444,26 +500,7 @@ impl Renderer {
                                            None
                                        };
 
-        let x0 = 0.0;
-        let y0 = 0.0;
-        let x1 = 1.0;
-        let y1 = 1.0;
-
-        let quad_indices: [u16; 6] = [ 0, 1, 2, 2, 1, 3 ];
-        let quad_vertices = [
-            PackedVertex {
-                pos: [x0, y0],
-            },
-            PackedVertex {
-                pos: [x1, y0],
-            },
-            PackedVertex {
-                pos: [x0, y1],
-            },
-            PackedVertex {
-                pos: [x1, y1],
-            },
-        ];
+        let gpu_data_textures = GpuDataTextures::new(&mut device);
 
         let main_thread_dispatcher = Arc::new(Mutex::new(None));
         let backend_notifier = Arc::clone(&notifier);
@@ -558,6 +595,7 @@ impl Renderer {
             last_time: 0,
             color_render_targets: Vec::new(),
             alpha_render_targets: Vec::new(),
+            gpu_data_textures: gpu_data_textures,
             pipeline_epoch_map: HashMap::with_hasher(Default::default()),
             main_thread_dispatcher: main_thread_dispatcher,
             cache_texture_id_map: Vec::new(),
@@ -1360,7 +1398,10 @@ impl Renderer {
             // self.gpu_data_textures[self.gdt_index].init_frame(&mut self.device, frame);
             // self.gdt_index = (self.gdt_index + 1) % GPU_DATA_TEXTURE_POOL;
 
-            self.device.update(frame);
+            //self.device.update(frame);
+            println!("before");
+            self.gpu_data_textures.init_frame(&mut self.device, frame);
+            println!("after");
 
             let mut src_color_id = self.dummy_cache_texture_id;
             let mut src_alpha_id = self.dummy_cache_texture_a8_id;

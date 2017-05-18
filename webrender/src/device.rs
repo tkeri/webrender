@@ -753,6 +753,32 @@ impl Device {
         }
     }
 
+    pub fn update_sampler_f32(&mut self,
+                              sampler: TextureSampler,
+                              data: &[f32]) {
+        match sampler {
+            TextureSampler::Layers => Device::update_texture_f32(&mut self.encoder, &self.layers, data),
+            TextureSampler::RenderTasks => Device::update_texture_f32(&mut self.encoder, &self.render_tasks, data),
+            TextureSampler::Geometry => Device::update_texture_f32(&mut self.encoder, &self.prim_geo, data),
+            TextureSampler::SplitGeometry => Device::update_texture_f32(&mut self.encoder, &self.split_geo, data),
+            TextureSampler::Data16 => Device::update_texture_f32(&mut self.encoder, &self.data16, data),
+            TextureSampler::Data32 => Device::update_texture_f32(&mut self.encoder, &self.data32, data),
+            TextureSampler::Data64 => Device::update_texture_f32(&mut self.encoder, &self.data64, data),
+            TextureSampler::Data128 => Device::update_texture_f32(&mut self.encoder, &self.data128, data),
+            TextureSampler::ResourceRects => Device::update_texture_f32(&mut self.encoder, &self.resource_rects, data),
+            _ => println!("{:?} sampler is not supported", sampler),
+        }
+    }
+
+    pub fn update_sampler_u8(&mut self,
+                             sampler: TextureSampler,
+                             data: &[u8]) {
+        match sampler {
+            TextureSampler::Gradients => Device::update_rgba_texture_u8(&mut self.encoder, &self.gradient_data, data),
+            _ => println!("{:?} sampler is not supported", sampler),
+        }
+    }
+
     pub fn clear_target(&mut self, color: Option<[f32; 4]>, depth: Option<f32>) {
         if let Some(color) = color {
             self.encoder.clear(&self.main_color,
@@ -765,19 +791,6 @@ impl Device {
         if let Some(depth) = depth {
             self.encoder.clear_depth(&self.main_depth, depth);
         }
-    }
-
-    pub fn update(&mut self, frame: &mut Frame) {
-        Device::update_texture_f32(&mut self.encoder, &self.layers, Device::convert_layer(frame.layer_texture_data.clone()).as_slice());
-        Device::update_texture_f32(&mut self.encoder, &self.render_tasks, Device::convert_render_task(frame.render_task_data.clone()).as_slice());
-        Device::update_texture_f32(&mut self.encoder, &self.prim_geo, Device::convert_prim_geo(frame.gpu_geometry.clone()).as_slice());
-        Device::update_texture_f32(&mut self.encoder, &self.split_geo, Device::convert_split_geo(frame.gpu_split_geometry.clone()).as_slice());
-        Device::update_texture_f32(&mut self.encoder, &self.data16, Device::convert_data16(frame.gpu_data16.clone()).as_slice());
-        Device::update_texture_f32(&mut self.encoder, &self.data32, Device::convert_data32(frame.gpu_data32.clone()).as_slice());
-        Device::update_texture_f32(&mut self.encoder, &self.data64, Device::convert_data64(frame.gpu_data64.clone()).as_slice());
-        Device::update_texture_f32(&mut self.encoder, &self.data128, Device::convert_data128(frame.gpu_data128.clone()).as_slice());
-        Device::update_texture_f32(&mut self.encoder, &self.resource_rects, Device::convert_resource_rects(frame.gpu_resource_rects.clone()).as_slice());
-        Device::update_rgba_texture_u8(&mut self.encoder, &self.gradient_data, Device::convert_gradient_data(frame.gpu_gradient_data.clone()).as_slice());
     }
 
     pub fn flush(&mut self) {
@@ -814,6 +827,7 @@ impl Device {
     pub fn update_rgba_texture_u8(encoder: &mut gfx::Encoder<R,CB>, texture: &Texture<R, Rgba8>, memory: &[u8]) {
         let tex = &texture.surface;
         let (width, height) = texture.get_size();
+        let resized_data = Device::convert_sampler_data_u8(memory, (width * height * 4) as usize);
         let img_info = gfx::texture::ImageInfoCommon {
             xoffset: 0,
             yoffset: 0,
@@ -825,13 +839,14 @@ impl Device {
             mipmap: 0,
         };
 
-        let data = gfx::memory::cast_slice(memory);
+        let data = gfx::memory::cast_slice(resized_data.as_slice());
         encoder.update_texture::<_, Rgba8>(tex, None, img_info, data).unwrap();
     }
 
     pub fn update_a_texture_u8(encoder: &mut gfx::Encoder<R,CB>, texture: &Texture<R, A8>, memory: &[u8]) {
         let tex = &texture.surface;
         let (width, height) = texture.get_size();
+        let resized_data = Device::convert_sampler_data_u8(memory, (width * height * A8_STRIDE) as usize);
         let img_info = gfx::texture::ImageInfoCommon {
             xoffset: 0,
             yoffset: 0,
@@ -843,13 +858,14 @@ impl Device {
             mipmap: 0,
         };
 
-        let data = gfx::memory::cast_slice(memory);
+        let data = gfx::memory::cast_slice(resized_data.as_slice());
         encoder.update_texture::<_, A8>(tex, None, img_info, data).unwrap();
     }
 
     pub fn update_texture_f32(encoder: &mut gfx::Encoder<R,CB>, texture: &Texture<R, Rgba32F>, memory: &[f32]) {
         let tex = &texture.surface;
         let (width, height) = texture.get_size();
+        let resized_data = Device::convert_sampler_data_f32(memory, (width * height * RGBA8_STRIDE) as usize);
         let img_info = gfx::texture::ImageInfoCommon {
             xoffset: 0,
             yoffset: 0,
@@ -861,153 +877,15 @@ impl Device {
             mipmap: 0,
         };
 
-        let data = gfx::memory::cast_slice(memory);
+        //println!("{:?}", resized_data);
+        let data = gfx::memory::cast_slice(resized_data.as_slice());
         encoder.update_texture::<_, Rgba32F>(tex, None, img_info, data).unwrap();
     }
 
-    fn convert_data16(data16: Vec<GpuBlock16>) -> Vec<f32> {
-        let mut data: Vec<f32> = data16.iter().flat_map(|d| d.data.to_vec()).collect();
-        let max_size = ((1024 / VECS_PER_DATA_16) * FLOAT_SIZE * TEXTURE_HEIGTH * 4) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
-            let mut zeros = vec![0f32; max_size - data.len()];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_data32(data32: Vec<GpuBlock32>) -> Vec<f32> {
-        let mut data: Vec<f32> = data32.iter().flat_map(|d| d.data.to_vec()).collect();
-        let max_size = ((1024 / VECS_PER_DATA_32) * FLOAT_SIZE * TEXTURE_HEIGTH) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
-            let mut zeros = vec![0f32; max_size - data.len()];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_data64(data64: Vec<GpuBlock64>) -> Vec<f32> {
-        let mut data: Vec<f32> = data64.iter().flat_map(|d| d.data.to_vec()).collect();
-        let max_size = ((1024 / VECS_PER_DATA_64) * FLOAT_SIZE * TEXTURE_HEIGTH) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
-            let mut zeros = vec![0f32; (max_size - data.len())];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_data128(data128: Vec<GpuBlock128>) -> Vec<f32> {
-        let mut data: Vec<f32> = data128.iter().flat_map(|d| d.data.to_vec()).collect();
-        let max_size = ((1024 / VECS_PER_DATA_128) * FLOAT_SIZE * TEXTURE_HEIGTH * 4) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
-            let mut zeros = vec![0f32; max_size - data.len()];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_layer(layers: Vec<PackedLayer>) -> Vec<f32> {
-        let mut data: Vec<f32> = vec!();
-        for l in layers {
-            data.append(&mut l.transform.to_row_major_array().to_vec());
-            data.append(&mut l.inv_transform.to_row_major_array().to_vec());
-            data.append(&mut l.local_clip_rect.origin.to_array().to_vec());
-            data.append(&mut l.local_clip_rect.size.to_array().to_vec());
-            data.append(&mut l.screen_vertices[0].to_array().to_vec());
-            data.append(&mut l.screen_vertices[1].to_array().to_vec());
-            data.append(&mut l.screen_vertices[2].to_array().to_vec());
-            data.append(&mut l.screen_vertices[3].to_array().to_vec());
-        }
-        let max_size = ((1024 / VECS_PER_LAYER) * FLOAT_SIZE * 64) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
-            let mut zeros = vec![0f32; max_size - data.len()];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_render_task(render_tasks: Vec<RenderTaskData>) -> Vec<f32> {
-        let mut data: Vec<f32> = render_tasks.iter().flat_map(|rt| rt.data.to_vec()).collect();
-        let max_size = ((1024 / VECS_PER_RENDER_TASK) * FLOAT_SIZE * TEXTURE_HEIGTH) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
-            let mut zeros = vec![0f32; max_size - data.len()];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_prim_geo(prim_geo: Vec<PrimitiveGeometry>) -> Vec<f32> {
-        let mut data: Vec<f32> = vec!();
-        for pg in prim_geo {
-            data.append(&mut pg.local_rect.origin.to_array().to_vec());
-            data.append(&mut pg.local_rect.size.to_array().to_vec());
-            data.append(&mut pg.local_clip_rect.origin.to_array().to_vec());
-            data.append(&mut pg.local_clip_rect.size.to_array().to_vec());
-        }
-        let max_size = ((1024 / VECS_PER_PRIM_GEOM) * FLOAT_SIZE * TEXTURE_HEIGTH) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
-            let mut zeros = vec![0f32; max_size - data.len()];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_resource_rects(resource_rects: Vec<TexelRect>) -> Vec<f32> {
-        let mut data: Vec<f32> = vec!();
-        for r in resource_rects {
-            data.append(&mut r.uv0.to_array().to_vec());
-            data.append(&mut r.uv1.to_array().to_vec());
-        }
-        let max_size = ((1024 / VECS_PER_RESOURCE_RECTS) * FLOAT_SIZE * TEXTURE_HEIGTH * 2) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
-            let mut zeros = vec![0f32; max_size - data.len()];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_gradient_data(gradient_data_vec: Vec<GradientData>) -> Vec<u8> {
-        let mut data: Vec<u8> = vec!();
-        for gradient_data in gradient_data_vec {
-            for entry in gradient_data.colors_high.iter() {
-                data.push(entry.start_color.r);
-                data.push(entry.start_color.g);
-                data.push(entry.start_color.b);
-                data.push(entry.start_color.a);
-                data.push(entry.end_color.r);
-                data.push(entry.end_color.g);
-                data.push(entry.end_color.b);
-                data.push(entry.end_color.a);
-            }
-            for entry in gradient_data.colors_low.iter() {
-                data.push(entry.start_color.r);
-                data.push(entry.start_color.g);
-                data.push(entry.start_color.b);
-                data.push(entry.start_color.a);
-                data.push(entry.end_color.r);
-                data.push(entry.end_color.g);
-                data.push(entry.end_color.b);
-                data.push(entry.end_color.a);
-            }
-        }
-        let max_size = ((1024 / VECS_PER_GRADIENT_DATA) * 4 * TEXTURE_HEIGTH * 10) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
+    fn convert_sampler_data_u8(data: &[u8], max_size: usize) -> Vec<u8> {
+        let mut data = data.to_vec();
+        //println!("{:?} {:?}", data.len(), max_size);
+        if data.len() < max_size {
             let mut zeros = vec![0u8; max_size - data.len()];
             data.append(&mut zeros);
         }
@@ -1015,11 +893,10 @@ impl Device {
         data
     }
 
-    fn convert_split_geo(split_geo: Vec<SplitGeometry>) -> Vec<f32> {
-        let mut data: Vec<f32> = split_geo.iter().flat_map(|g| g.data.to_vec()).collect();
-        let max_size = ((1024 / VECS_PER_SPLIT_GEOM) * FLOAT_SIZE * TEXTURE_HEIGTH * 2) as usize;
-        assert!(!(data.len() > max_size));
-        if max_size > data.len() {
+    fn convert_sampler_data_f32(data: &[f32], max_size: usize) -> Vec<f32> {
+        let mut data = data.to_vec();
+        //println!("{:?} {:?}", data.len(), max_size);
+        if data.len() < max_size {
             let mut zeros = vec![0f32; max_size - data.len()];
             data.append(&mut zeros);
         }
