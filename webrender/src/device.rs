@@ -22,7 +22,7 @@ use gfx_device_gl as device_gl;
 use gfx_device_gl::{Resources as R, CommandBuffer as CB};
 use gfx_window_glutin;
 use gfx::CombinedError;
-use gfx::format::{Format, R8, Unorm, Rgba8, Rgba32F};
+use gfx::format::{Format, Formatted, R8, Rgba32F, Rgba8,Srgba8, SurfaceTyped, TextureChannel, TextureSurface, Unorm};
 use tiling::PrimitiveInstance;
 use renderer::{BlendMode, DITHER_ID, DUMMY_A8_ID, DUMMY_RGBA8_ID, MAX_VERTEX_TEXTURE_WIDTH};
 
@@ -358,12 +358,12 @@ pub struct Device {
     factory: device_gl::Factory,
     encoder: gfx::Encoder<R,CB>,
     textures: HashMap<TextureId, TextureData>,
-    color0: Texture<R, Rgba8>,
-    color1: Texture<R, Rgba8>,
-    color2: Texture<R, Rgba8>,
+    color0: Texture<R, Srgba8>,
+    color1: Texture<R, Srgba8>,
+    color2: Texture<R, Srgba8>,
     dither: Texture<R, A8>,
     cache_a8: Texture<R, A8>,
-    cache_rgba8: Texture<R, Rgba8>,
+    cache_rgba8: Texture<R, Srgba8>,
     data16: Texture<R, Rgba32F>,
     data32: Texture<R, Rgba32F>,
     data64: Texture<R, Rgba32F>,
@@ -730,12 +730,12 @@ impl Device {
             }
         };
         match sampler {
-            TextureSampler::Color0 => Device::update_rgba_texture_u8(&mut self.encoder, &self.color0, texture.data.as_slice()),
-            TextureSampler::Color1 => Device::update_rgba_texture_u8(&mut self.encoder, &self.color1, texture.data.as_slice()),
-            TextureSampler::Color2 => Device::update_rgba_texture_u8(&mut self.encoder, &self.color2, texture.data.as_slice()),
-            TextureSampler::CacheA8 => Device::update_a_texture_u8(&mut self.encoder, &self.cache_a8, texture.data.as_slice()),
-            TextureSampler::CacheRGBA8 => Device::update_rgba_texture_u8(&mut self.encoder, &self.cache_rgba8, texture.data.as_slice()),
-            TextureSampler::Dither => Device::update_a_texture_u8(&mut self.encoder, &self.dither, texture.data.as_slice()),
+            TextureSampler::Color0 => Device::update_texture_u8::<_, Srgba8>(&mut self.encoder, &self.color0, texture.data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Color1 => Device::update_texture_u8::<_, Srgba8>(&mut self.encoder, &self.color1, texture.data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Color2 => Device::update_texture_u8::<_, Srgba8>(&mut self.encoder, &self.color2, texture.data.as_slice(), RGBA_STRIDE),
+            TextureSampler::CacheA8 => Device::update_texture_u8::<_, A8>(&mut self.encoder, &self.cache_a8, texture.data.as_slice(), A_STRIDE),
+            TextureSampler::CacheRGBA8 => Device::update_texture_u8::<_, Srgba8>(&mut self.encoder, &self.cache_rgba8, texture.data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Dither => Device::update_texture_u8::<_, A8>(&mut self.encoder, &self.dither, texture.data.as_slice(), A_STRIDE),
             _ => println!("There are only 5 samplers supported. {:?}", sampler),
         }
     }
@@ -761,7 +761,7 @@ impl Device {
                              sampler: TextureSampler,
                              data: &[u8]) {
         match sampler {
-            TextureSampler::Gradients => Device::update_rgba_texture_u8(&mut self.encoder, &self.gradient_data, data),
+            TextureSampler::Gradients => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.gradient_data, data, RGBA_STRIDE),
             _ => println!("{:?} sampler is not supported", sampler),
         }
     }
@@ -812,10 +812,17 @@ impl Device {
         self.encoder.draw(&program.slice, &program.get_pso(blendmode), &program.data);
     }
 
-    pub fn update_rgba_texture_u8(encoder: &mut gfx::Encoder<R,CB>, texture: &Texture<R, Rgba8>, memory: &[u8]) {
+    pub fn update_texture_u8<S, T>(encoder: &mut gfx::Encoder<R,CB>,
+                                   texture: &Texture<R, T>,
+                                   memory: &[u8],
+                                   stride: usize)
+        where S: SurfaceTyped + TextureSurface,
+              S::DataType: Copy,
+              T: Formatted<Surface=S>,
+              T::Channel: TextureChannel {
         let tex = &texture.surface;
         let (width, height) = texture.get_size();
-        let resized_data = Device::convert_sampler_data_u8(memory, (width * height * RGBA_STRIDE) as usize);
+        let resized_data = Device::convert_sampler_data_u8(memory, (width * height * stride) as usize);
         let img_info = gfx::texture::ImageInfoCommon {
             xoffset: 0,
             yoffset: 0,
@@ -828,26 +835,7 @@ impl Device {
         };
 
         let data = gfx::memory::cast_slice(resized_data.as_slice());
-        encoder.update_texture::<_, Rgba8>(tex, None, img_info, data).unwrap();
-    }
-
-    pub fn update_a_texture_u8(encoder: &mut gfx::Encoder<R,CB>, texture: &Texture<R, A8>, memory: &[u8]) {
-        let tex = &texture.surface;
-        let (width, height) = texture.get_size();
-        let resized_data = Device::convert_sampler_data_u8(memory, (width * height * A_STRIDE) as usize);
-        let img_info = gfx::texture::ImageInfoCommon {
-            xoffset: 0,
-            yoffset: 0,
-            zoffset: 0,
-            width: width as u16,
-            height: height as u16,
-            depth: 0,
-            format: (),
-            mipmap: 0,
-        };
-
-        let data = gfx::memory::cast_slice(resized_data.as_slice());
-        encoder.update_texture::<_, A8>(tex, None, img_info, data).unwrap();
+        encoder.update_texture::<_, T>(tex, None, img_info, data).unwrap();
     }
 
     pub fn update_texture_f32(encoder: &mut gfx::Encoder<R,CB>, texture: &Texture<R, Rgba32F>, memory: &[f32]) {
