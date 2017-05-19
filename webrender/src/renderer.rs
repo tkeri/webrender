@@ -12,15 +12,15 @@
 use device::{Device, TextureId, TextureFilter, TextureTarget, Program, ShaderError};
 use device::{VECS_PER_DATA_16, VECS_PER_DATA_32, VECS_PER_DATA_64, VECS_PER_DATA_128};
 use device::{VECS_PER_LAYER, VECS_PER_PRIM_GEOM, VECS_PER_RENDER_TASK};
-use device::{VECS_PER_RESOURCE_RECTS, VECS_PER_GRADIENT_DATA, VECS_PER_SPLIT_GEOM};
-use device::{A8_STRIDE, RGBA8_STRIDE};
+use device::{VECS_PER_RESOURCE_RECTS, /*VECS_PER_GRADIENT_DATA,*/ VECS_PER_SPLIT_GEOM};
+use device::RGBA_STRIDE;
 use euclid::Matrix4D;
 use fnv::FnvHasher;
 use frame_builder::FrameBuilderConfig;
 use gleam::gl;
 use gpu_store::{GpuStore, GpuStoreLayout};
 use internal_types::{CacheTextureId, RendererFrame, ResultMsg, TextureUpdateOp};
-use internal_types::{TextureUpdateList, PackedVertex, RenderTargetMode};
+use internal_types::{TextureUpdateList, RenderTargetMode};
 use internal_types::{ORTHO_NEAR_PLANE, ORTHO_FAR_PLANE, SourceTexture};
 use internal_types::TextureSampler;
 use prim_store::{GradientData, SplitGeometry};
@@ -56,11 +56,10 @@ use webrender_traits::VRCompositorHandler;
 
 use glutin;
 
-pub const GPU_DATA_TEXTURE_POOL: usize = 5;
 pub const MAX_VERTEX_TEXTURE_WIDTH: usize = 1024;
 pub const DUMMY_RGBA8_ID: u32 = 2;
 pub const DUMMY_A8_ID: u32 = 3;
-pub const DUMMY_DITHER_ID: u32 = 4;
+pub const DITHER_ID: u32 = 4;
 
 macro_rules! create_program (
     ($device: ident, $shader: expr) => {
@@ -132,15 +131,12 @@ pub enum BlendMode {
 }
 
 struct GpuDataTexture<L> {
-    id: TextureId,
     layout: PhantomData<L>,
 }
 
 impl<L: GpuStoreLayout> GpuDataTexture<L> {
-    fn new(device: &mut Device) -> GpuDataTexture<L> {
-        // TODO we dont need this
+    fn new() -> GpuDataTexture<L> {
         GpuDataTexture {
-            id: TextureId::invalid(),
             layout: PhantomData,
         }
     }
@@ -149,13 +145,12 @@ impl<L: GpuStoreLayout> GpuDataTexture<L> {
                         device: &mut Device,
                         sampler: TextureSampler,
                         data: &mut Vec<T>,
-                        size: u32) {
+                        size: usize) {
         if data.is_empty() {
             return;
         }
 
         let items_per_row = L::items_per_row::<T>();
-        let rows_per_item = L::rows_per_item::<T>();
 
         // Extend the data array to be a multiple of the row size.
         // This ensures memory safety when the array is passed to
@@ -165,12 +160,6 @@ impl<L: GpuStoreLayout> GpuDataTexture<L> {
                 data.push(T::default());
             }
         }
-
-        let height = if items_per_row != 0 {
-            data.len() / items_per_row
-        } else {
-            data.len() * rows_per_item
-        };
 
         match L::image_format() {
             ImageFormat::RGBAF32 => {
@@ -221,7 +210,7 @@ impl GpuStoreLayout for GradientDataTextureLayout {
     }
 }
 
-type GradientDataTexture = GpuDataTexture<GradientDataTextureLayout>;
+//type GradientDataTexture = GpuDataTexture<GradientDataTextureLayout>;
 pub type GradientDataStore = GpuStore<GradientData, GradientDataTextureLayout>;
 
 pub struct SplitGeometryTextureLayout;
@@ -253,47 +242,66 @@ struct GpuDataTextures {
     data64_texture: VertexDataTexture,
     data128_texture: VertexDataTexture,
     resource_rects_texture: VertexDataTexture,
-    gradient_data_texture: GradientDataTexture,
+    //gradient_data_texture: GradientDataTexture,
     split_geometry_texture: SplitGeometryTexture,
 }
 
 impl GpuDataTextures {
-    fn new(device: &mut Device) -> GpuDataTextures {
+    fn new() -> GpuDataTextures {
         GpuDataTextures {
-            layer_texture: VertexDataTexture::new(device),
-            render_task_texture: VertexDataTexture::new(device),
-            prim_geom_texture: VertexDataTexture::new(device),
-            data16_texture: VertexDataTexture::new(device),
-            data32_texture: VertexDataTexture::new(device),
-            data64_texture: VertexDataTexture::new(device),
-            data128_texture: VertexDataTexture::new(device),
-            resource_rects_texture: VertexDataTexture::new(device),
-            gradient_data_texture: GradientDataTexture::new(device),
-            split_geometry_texture: SplitGeometryTexture::new(device),
+            layer_texture: VertexDataTexture::new(),
+            render_task_texture: VertexDataTexture::new(),
+            prim_geom_texture: VertexDataTexture::new(),
+            data16_texture: VertexDataTexture::new(),
+            data32_texture: VertexDataTexture::new(),
+            data64_texture: VertexDataTexture::new(),
+            data128_texture: VertexDataTexture::new(),
+            resource_rects_texture: VertexDataTexture::new(),
+            //gradient_data_texture: GradientDataTexture::new(),
+            split_geometry_texture: SplitGeometryTexture::new(),
         }
     }
 
     fn init_frame(&mut self, device: &mut Device, frame: &mut Frame) {
-        //println!("gpu_data16 {:?}", frame.gpu_data16);
-        self.data16_texture.init(device, TextureSampler::Data16, &mut frame.gpu_data16, VECS_PER_DATA_16 * RGBA8_STRIDE);
-        //println!("gpu_data32 {:?}", frame.gpu_data32);
-        self.data32_texture.init(device, TextureSampler::Data32, &mut frame.gpu_data32, VECS_PER_DATA_32 * RGBA8_STRIDE);
-        //println!("gpu_data64 {:?}", frame.gpu_data64);
-        self.data64_texture.init(device, TextureSampler::Data64, &mut frame.gpu_data64, VECS_PER_DATA_64 * RGBA8_STRIDE);
-        //println!("gpu_data64 {:?}", frame.gpu_data64);
-        self.data128_texture.init(device, TextureSampler::Data128, &mut frame.gpu_data128, VECS_PER_DATA_128 * RGBA8_STRIDE);
-        //println!("gpu_geometry {:?}", frame.gpu_geometry);
-        self.prim_geom_texture.init(device, TextureSampler::Geometry, &mut frame.gpu_geometry, VECS_PER_PRIM_GEOM * RGBA8_STRIDE);
-        //println!("gpu_resource_rects {:?}", frame.gpu_resource_rects);
-        self.resource_rects_texture.init(device, TextureSampler::ResourceRects, &mut frame.gpu_resource_rects, VECS_PER_RESOURCE_RECTS * RGBA8_STRIDE);
-        //println!("layer_texture_data {:?}", frame.layer_texture_data);
-        self.layer_texture.init(device, TextureSampler::Layers, &mut frame.layer_texture_data, VECS_PER_LAYER * RGBA8_STRIDE);
-        //println!("render_task_data {:?}", frame.render_task_data);
-        self.render_task_texture.init(device, TextureSampler::RenderTasks, &mut frame.render_task_data, VECS_PER_RENDER_TASK * RGBA8_STRIDE);
-        //println!("gpu_gradient_data {:?}", frame.gpu_gradient_data);
-        self.gradient_data_texture.init(device, TextureSampler::Gradients, &mut frame.gpu_gradient_data, VECS_PER_GRADIENT_DATA * A8_STRIDE);
-        //println!("gpu_split_geometry {:?}", frame.gpu_split_geometry);
-        self.split_geometry_texture.init(device, TextureSampler::SplitGeometry, &mut frame.gpu_split_geometry, VECS_PER_SPLIT_GEOM * RGBA8_STRIDE);
+        self.data16_texture.init(device, TextureSampler::Data16, &mut frame.gpu_data16, VECS_PER_DATA_16 * RGBA_STRIDE);
+        self.data32_texture.init(device, TextureSampler::Data32, &mut frame.gpu_data32, VECS_PER_DATA_32 * RGBA_STRIDE);
+        self.data64_texture.init(device, TextureSampler::Data64, &mut frame.gpu_data64, VECS_PER_DATA_64 * RGBA_STRIDE);
+        self.data128_texture.init(device, TextureSampler::Data128, &mut frame.gpu_data128, VECS_PER_DATA_128 * RGBA_STRIDE);
+        self.prim_geom_texture.init(device, TextureSampler::Geometry, &mut frame.gpu_geometry, VECS_PER_PRIM_GEOM * RGBA_STRIDE);
+        self.resource_rects_texture.init(device, TextureSampler::ResourceRects, &mut frame.gpu_resource_rects, VECS_PER_RESOURCE_RECTS * RGBA_STRIDE);
+        self.layer_texture.init(device, TextureSampler::Layers, &mut frame.layer_texture_data, VECS_PER_LAYER * RGBA_STRIDE);
+        self.render_task_texture.init(device, TextureSampler::RenderTasks, &mut frame.render_task_data, VECS_PER_RENDER_TASK * RGBA_STRIDE);
+        self.split_geometry_texture.init(device, TextureSampler::SplitGeometry, &mut frame.gpu_split_geometry, VECS_PER_SPLIT_GEOM * RGBA_STRIDE);
+        //self.gradient_data_texture.init(device, TextureSampler::Gradients, &mut frame.gpu_gradient_data, VECS_PER_GRADIENT_DATA * RGBA_STRIDE);
+        device.update_sampler_u8(TextureSampler::Gradients,
+                                 self.convert_gradient_data(&mut frame.gpu_gradient_data).as_slice());
+    }
+
+    fn convert_gradient_data(&self, gradient_data_vec: &mut Vec<GradientData>) -> Vec<u8> {
+        let mut data: Vec<u8> = vec!();
+        for gradient_data in gradient_data_vec {
+            for entry in gradient_data.colors_high.iter() {
+                data.push(entry.start_color.r);
+                data.push(entry.start_color.g);
+                data.push(entry.start_color.b);
+                data.push(entry.start_color.a);
+                data.push(entry.end_color.r);
+                data.push(entry.end_color.g);
+                data.push(entry.end_color.b);
+                data.push(entry.end_color.a);
+            }
+            for entry in gradient_data.colors_low.iter() {
+                data.push(entry.start_color.r);
+                data.push(entry.start_color.g);
+                data.push(entry.start_color.b);
+                data.push(entry.start_color.a);
+                data.push(entry.end_color.r);
+                data.push(entry.end_color.g);
+                data.push(entry.end_color.b);
+                data.push(entry.end_color.a);
+            }
+        }
+        data
     }
 }
 
@@ -309,15 +317,15 @@ pub struct Renderer {
     // These are "cache shaders". These shaders are used to
     // draw intermediate results to cache targets. The results
     // of these shaders are then used by the primitive shaders.
-    cs_box_shadow: Option<Program>,
-    cs_text_run: Option<Program>,
-    cs_blur: Option<Program>,
+    //cs_box_shadow: Program,
+    //cs_text_run: Program,
+    //cs_blur: Program,
     /// These are "cache clip shaders". These shaders are used to
     /// draw clip instances into the cached clip mask. The results
     /// of these shaders are also used by the primitive shaders.
-    cs_clip_rectangle: Option<Program>,
-    cs_clip_image: Option<Program>,
-    cs_clip_border: Option<Program>,
+    //cs_clip_rectangle: Program,
+    //cs_clip_image: Program,
+    //cs_clip_border: Program,
 
     // The are "primitive shaders". These shaders draw and blend
     // final results on screen. They are aware of tile boundaries.
@@ -330,8 +338,6 @@ pub struct Renderer {
     ps_rectangle_clip: ProgramPair,
     ps_text_run: ProgramPair,
     ps_text_run_subpixel: ProgramPair,
-    //ps_image: Vec<Option<PrimitiveShader>>,
-    //ps_yuv_image: Vec<Option<PrimitiveShader>>,
     ps_image: ProgramPair,
     ps_yuv_image: ProgramPair,
     ps_border_corner: ProgramPair,
@@ -349,12 +355,8 @@ pub struct Renderer {
 
     notifier: Arc<Mutex<Option<Box<RenderNotifier>>>>,
 
-    enable_profiler: bool,
-    max_recorded_profiles: usize,
     clear_framebuffer: bool,
     clear_color: ColorF,
-    render_target_debug: bool,
-    last_time: u64,
 
     color_render_targets: Vec<TextureId>,
     alpha_render_targets: Vec<TextureId>,
@@ -453,12 +455,12 @@ impl Renderer {
 
         let mut device = Device::new(window);
 
-        let cs_box_shadow = None;//create_program(device, cs_box_shadow);
-        let cs_text_run = None;//create_program(device, cs_text_run);
-        let cs_blur = None;//create_program(device, cs_blur);
-        let cs_clip_rectangle = None;//create_program(device, cs_clip_rectangle);
-        let cs_clip_image = None;//create_program(device, cs_clip_image);
-        let cs_clip_border = None;//create_program(device, cs_clip_border);
+        //let cs_box_shadow = create_program!(device, "cs_box_shadow");
+        //let cs_text_run = create_program!(device, "cs_text_run");
+        //let cs_blur = create_program!(device, "cs_blur");
+        //let cs_clip_rectangle = create_program!(device, "cs_clip_rectangle");
+        //let cs_clip_image = create_program!(device, "cs_clip_image");
+        //let cs_clip_border = create_program!(device, "cs_clip_border");
 
         let ps_rectangle = create_programs!(device, "ps_rectangle");
         let ps_rectangle_clip = create_programs!(device, "ps_rectangle_clip");
@@ -491,16 +493,16 @@ impl Renderer {
         let device_max_size = device.max_texture_size();
         let max_texture_size = cmp::min(device_max_size, options.max_texture_size.unwrap_or(device_max_size));
 
-        let /*mut */texture_cache = TextureCache::new(max_texture_size);
+        let texture_cache = TextureCache::new(max_texture_size);
         let dummy_cache_texture_id = TextureId::new(DUMMY_RGBA8_ID, TextureTarget::Default);
         let dummy_cache_texture_a8_id = TextureId::new(DUMMY_A8_ID, TextureTarget::Default);
         let dither_matrix_texture_id = if options.enable_dithering {
-                                           Some(TextureId::new(DUMMY_DITHER_ID, TextureTarget::Default))
+                                           Some(TextureId::new(DITHER_ID, TextureTarget::Default))
                                        } else {
                                            None
                                        };
 
-        let gpu_data_textures = GpuDataTextures::new(&mut device);
+        let gpu_data_textures = GpuDataTextures::new();
 
         let main_thread_dispatcher = Arc::new(Mutex::new(None));
         let backend_notifier = Arc::clone(&notifier);
@@ -527,7 +529,6 @@ impl Renderer {
                                              options.debug);
 
         let device_pixel_ratio = options.device_pixel_ratio;
-        let render_target_debug = options.render_target_debug;
         let payload_tx_for_backend = payload_tx.clone();
         let recorder = options.recorder;
         // TODO(gw): Use a heuristic to select best # of worker threads.
@@ -563,12 +564,12 @@ impl Renderer {
             current_frame: None,
             pending_texture_updates: Vec::new(),
             pending_shader_updates: Vec::new(),
-            cs_box_shadow: cs_box_shadow,
-            cs_text_run: cs_text_run,
-            cs_blur: cs_blur,
-            cs_clip_rectangle: cs_clip_rectangle,
-            cs_clip_border: cs_clip_border,
-            cs_clip_image: cs_clip_image,
+            //cs_box_shadow: cs_box_shadow,
+            //cs_text_run: cs_text_run,
+            //cs_blur: cs_blur,
+            //cs_clip_rectangle: cs_clip_rectangle,
+            //cs_clip_border: cs_clip_border,
+            //cs_clip_image: cs_clip_image,
             ps_rectangle: ProgramPair(ps_rectangle),
             ps_rectangle_clip: ProgramPair(ps_rectangle_clip),
             ps_text_run: ProgramPair(ps_text_run),
@@ -587,12 +588,8 @@ impl Renderer {
             ps_split_composite: ps_split_composite,
             ps_composite: ps_composite,
             notifier: notifier,
-            render_target_debug: render_target_debug,
-            enable_profiler: options.enable_profiler,
-            max_recorded_profiles: options.max_recorded_profiles,
             clear_framebuffer: options.clear_framebuffer,
             clear_color: options.clear_color,
-            last_time: 0,
             color_render_targets: Vec::new(),
             alpha_render_targets: Vec::new(),
             gpu_data_textures: gpu_data_textures,
@@ -841,7 +838,6 @@ impl Renderer {
                     }
                     TextureUpdateOp::Update { page_pos_x, page_pos_y, width, height, data, stride, offset } => {
                         let texture_id = self.cache_texture_id_map[update.id.0];
-                        //println!("UPDATE texture upadte texture_id: {:?}, page_pos_x: {:?}, page_pos_y: {:?}, width: {:?}, height: {:?}, stride: {:?}",texture_id, page_pos_x, page_pos_y, width, height, stride);
                         self.device.update_texture(texture_id,
                                                    page_pos_x,
                                                    page_pos_y,
@@ -916,10 +912,9 @@ impl Renderer {
     fn submit_batch(&mut self,
                     batch: &PrimitiveBatch,
                     projection: &Matrix4D<f32>,
-                    render_task_data: &[RenderTaskData],
-                    // cache_texture: TextureId,
-                    render_target: Option<(TextureId, i32)>,
-                    target_dimensions: DeviceUintSize) {
+                    _render_task_data: &[RenderTaskData],
+                    _render_target: Option<(TextureId, i32)>,
+                    _target_dimensions: DeviceUintSize) {
         let transform_kind = batch.key.flags.transform_kind();
         let needs_clipping = batch.key.flags.needs_clipping();
         debug_assert!(!needs_clipping ||
@@ -1037,16 +1032,11 @@ impl Renderer {
                          render_target: Option<(TextureId, i32)>,
                          target: &ColorRenderTarget,
                          target_size: DeviceUintSize,
-                         color_cache_texture: TextureId,
+                         _color_cache_texture: TextureId,
                          clear_color: Option<[f32; 4]>,
                          render_task_data: &[RenderTaskData],
                          projection: &Matrix4D<f32>) {
         {
-            // self.device.bind_draw_target(render_target, Some(target_size));
-            // self.device.disable_depth();
-            // self.device.enable_depth_write();
-            // self.device.set_blend(false);
-            // self.device.set_blend_mode_alpha();
             match render_target {
                 Some(..) => {
                     // TODO(gw): Applying a scissor rect and minimal clear here
@@ -1063,7 +1053,6 @@ impl Renderer {
                 }
             }
 
-            //self.device.disable_depth_write();
         }
 
         // Draw any blurs for this target.
@@ -1123,50 +1112,17 @@ impl Renderer {
                                       shader,
                                       &target.text_run_textures,
                                       &projection);
-        }
-
-        let _gm2 = GpuMarker::new(self.device.rc_gl(), "alpha batches");
-        self.device.set_blend(false);
-        let mut prev_blend_mode = BlendMode::None;
-
-        //Note: depth equality is needed for split planes
-        self.device.set_depth_func(DepthFunction::LessEqual);
-        self.device.enable_depth();
-        self.device.enable_depth_write();*/
+        }*/
 
         for batch in &target.alpha_batcher.batch_list.opaque_batches {
             self.submit_batch(batch,
                               &projection,
                               render_task_data,
-                              // color_cache_texture,
                               render_target,
                               target_size);
         }
 
-        //self.device.disable_depth_write();
-
         for batch in &target.alpha_batcher.batch_list.alpha_batches {
-            /*if batch.key.blend_mode != prev_blend_mode {
-                match batch.key.blend_mode {
-                    BlendMode::None => {
-                        self.device.set_blend(false);
-                    }
-                    BlendMode::Alpha => {
-                        self.device.set_blend(true);
-                        self.device.set_blend_mode_alpha();
-                    }
-                    BlendMode::PremultipliedAlpha => {
-                        self.device.set_blend(true);
-                        self.device.set_blend_mode_premultiplied_alpha();
-                    }
-                    BlendMode::Subpixel(color) => {
-                        self.device.set_blend(true);
-                        self.device.set_blend_mode_subpixel(color);
-                    }
-                }
-                prev_blend_mode = batch.key.blend_mode;
-            }*/
-
             self.submit_batch(batch,
                               &projection,
                               render_task_data,
@@ -1175,16 +1131,13 @@ impl Renderer {
                               target_size);
 
         }
-
-        // self.device.disable_depth();
-        // self.device.set_blend(false);
     }
 
     fn draw_alpha_target(&mut self,
-                         render_target: (TextureId, i32),
-                         target: &AlphaRenderTarget,
-                         target_size: DeviceUintSize,
-                         projection: &Matrix4D<f32>) {
+                         _render_target: (TextureId, i32),
+                         _target: &AlphaRenderTarget,
+                         _target_size: DeviceUintSize,
+                         _projection: &Matrix4D<f32>) {
         {
             // let _gm = self.gpu_profile.add_marker(GPU_TAG_SETUP_TARGET);
             // self.device.bind_draw_target(Some(render_target), Some(target_size));
@@ -1196,7 +1149,7 @@ impl Renderer {
             // GPUs that I have tested with. It's possible it may be a
             // performance penalty on other GPU types - we should test this
             // and consider different code paths.
-            let clear_color = [1.0, 1.0, 1.0, 0.0];
+            //let clear_color = [1.0, 1.0, 1.0, 0.0];
             // self.device.clear_target_rect(Some(clear_color),
             //                               None,
             //                               target.used_rect());
@@ -1336,12 +1289,6 @@ impl Renderer {
         let needs_clear = frame.window_size.width < framebuffer_size.width ||
                           frame.window_size.height < framebuffer_size.height;
 
-        // self.device.disable_depth_write();
-        // self.device.disable_stencil();
-        // self.device.set_blend(false);
-
-        //println!("pending_texture_updates: {:?}", self.pending_texture_updates);
-
         if frame.passes.is_empty() {
             //self.device.clear_target(Some(self.clear_color.to_array()), Some(1.0));
         } else {
@@ -1391,17 +1338,7 @@ impl Renderer {
                 }
             }
 
-            // TODO(gw): This is a hack / workaround for #728.
-            // We should find a better way to implement these updates rather
-            // than wasting this extra memory, but for now it removes a large
-            // number of driver stalls.
-            // self.gpu_data_textures[self.gdt_index].init_frame(&mut self.device, frame);
-            // self.gdt_index = (self.gdt_index + 1) % GPU_DATA_TEXTURE_POOL;
-
-            //self.device.update(frame);
-            println!("before");
             self.gpu_data_textures.init_frame(&mut self.device, frame);
-            println!("after");
 
             let mut src_color_id = self.dummy_cache_texture_id;
             let mut src_alpha_id = self.dummy_cache_texture_a8_id;
@@ -1533,12 +1470,12 @@ impl Renderer {
     }*/
 
     // De-initialize the Renderer safely, assuming the GL is still alive and active.
-    pub fn deinit(/*mut */self) {
+    /*pub fn deinit(mut self) {
         //Note: this is a fake frame, only needed because texture deletion is require to happen inside a frame
         // self.device.begin_frame(1.0);
         // self.device.deinit_texture(self.dummy_cache_texture_id);
         // self.device.end_frame();
-    }
+    }*/
 }
 
 pub enum ExternalImageSource<'a> {

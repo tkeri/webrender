@@ -89,10 +89,6 @@ mod webgl_types;
 #[path = "webgl_stubs.rs"]
 mod webgl_types;
 
-mod shader_source {
-    include!(concat!(env!("OUT_DIR"), "/shaders.rs"));
-}
-
 pub use record::{ApiRecordingReceiver, BinaryRecorder, WEBRENDER_RECORDING_HEADER};
 
 mod platform {
@@ -117,8 +113,6 @@ mod platform {
     }
 }
 
-#[allow(dead_code)]
-#[allow(unused_variables)]
 pub mod renderer;
 
 #[cfg(target_os="macos")]
