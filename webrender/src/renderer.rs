@@ -277,7 +277,7 @@ impl GpuDataTextures {
                                  self.convert_gradient_data(&mut frame.gpu_gradient_data).as_slice());
     }
 
-    fn convert_gradient_data(&self, gradient_data_vec: &mut Vec<GradientData>) -> Vec<u8> {
+    fn convert_gradient_data(&self, gradient_data_vec: &mut [GradientData]) -> Vec<u8> {
         let mut data: Vec<u8> = vec!();
         for gradient_data in gradient_data_vec {
             for entry in gradient_data.colors_high.iter() {

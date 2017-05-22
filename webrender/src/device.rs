@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use euclid::Matrix4D;
-use internal_types::{BatchTextures, RenderTargetMode, TextureSampler};
+use internal_types::{RenderTargetMode, TextureSampler};
 use std::collections::HashMap;
 use std::mem;
 use webrender_traits::ImageFormat;
@@ -173,17 +173,17 @@ impl Instances {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Texture<R, T> where R: gfx::Resources,
                                T: gfx::format::TextureFormat {
-    // Pixel storage for texture.
+    /// Pixel storage for texture.
     pub surface: gfx::handle::Texture<R, T::Surface>,
-    // Sampler for texture.
+    /// Sampler for texture.
     pub sampler: gfx::handle::Sampler<R>,
-    // View used by shader.
+    /// View used by shader.
     pub view: gfx::handle::ShaderResourceView<R, T::View>,
-    // Filtering mode
+    /// Filtering mode
     pub filter: TextureFilter,
-    // ImageFormat
+    /// ImageFormat
     pub format: ImageFormat,
-    // Render Target mode
+    /// Render Target mode
     pub mode: RenderTargetMode,
 }
 
@@ -272,13 +272,17 @@ pub struct Program {
 }
 
 impl Program {
-    fn new(data: primitive::Data<R>, pso: (PSPrimitive, PSPrimitive, PSPrimitive, PSPrimitive), slice: gfx::Slice<R>, upload: gfx::handle::Buffer<R, Instances>) -> Program {
+    fn new(data: primitive::Data<R>,
+           psos: (PSPrimitive, PSPrimitive, PSPrimitive, PSPrimitive),
+           slice: gfx::Slice<R>,
+           upload: gfx::handle::Buffer<R, Instances>)
+           -> Program {
         Program {
             data: data,
-            pso: pso.0,
-            pso_alpha: pso.1,
-            pso_prem_alpha: pso.2,
-            pso_subpixel: pso.3,
+            pso: psos.0,
+            pso_alpha: psos.1,
+            pso_prem_alpha: psos.2,
+            pso_subpixel: psos.3,
             slice: slice,
             upload: upload,
         }
@@ -345,6 +349,16 @@ pub struct TextureData {
     stride: usize,
 }
 
+impl TextureData {
+    fn new(id: TextureId, data: &[u8], stride: usize) -> TextureData {
+        TextureData {
+            id: id,
+            data: data.to_vec(),
+            stride: stride,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ShaderError {
     Compilation(String, String), // name, error mssage
@@ -386,14 +400,10 @@ impl Device {
         println!("Renderer: {:?}", device.get_info().platform_name.renderer);
         println!("Version: {:?}", device.get_info().version);
         println!("Shading Language: {:?}", device.get_info().shading_language);*/
-        let encoder: gfx::Encoder<_,_> = factory.create_command_buffer().into();
+        let encoder = factory.create_command_buffer().into();
         let max_texture_size = factory.get_capabilities().max_texture_size as u32;
 
-        let x0 = 0.0;
-        let y0 = 0.0;
-        let x1 = 1.0;
-        let y1 = 1.0;
-
+        let (x0, y0, x1, y1) = (0.0, 0.0, 1.0, 1.0);
         let quad_indices: &[u16] = &[ 0, 1, 2, 2, 1, 3 ];
         let quad_vertices = [
             Position::new([x0, y0]),
@@ -429,13 +439,13 @@ impl Device {
         let mut textures = HashMap::new();
         let (w, h) = color0.get_size();
         let invalid_id = TextureId::invalid();
-        textures.insert(invalid_id, TextureData { id: invalid_id, data: vec![0u8; w * h * RGBA_STRIDE], stride: RGBA_STRIDE });
+        textures.insert(invalid_id, TextureData::new(invalid_id, &vec!(0u8; w * h * RGBA_STRIDE), RGBA_STRIDE));
         let invalid_a8_id = TextureId::invalid_a8();
-        textures.insert(invalid_a8_id, TextureData { id: invalid_a8_id, data: vec![0u8; w * h * A_STRIDE], stride: A_STRIDE });
+        textures.insert(invalid_a8_id, TextureData::new(invalid_a8_id, &vec![0u8; w * h * A_STRIDE], A_STRIDE));
         let dummy_rgba8_id = TextureId { name: DUMMY_RGBA8_ID };
-        textures.insert(dummy_rgba8_id, TextureData { id: dummy_rgba8_id, data: vec![0u8; w * h * RGBA_STRIDE], stride: RGBA_STRIDE });
+        textures.insert(dummy_rgba8_id, TextureData::new(dummy_rgba8_id, &vec![0u8; w * h * RGBA_STRIDE], RGBA_STRIDE));
         let dummy_a8_id = TextureId { name: DUMMY_A8_ID };
-        textures.insert(dummy_a8_id, TextureData { id: dummy_a8_id, data: vec![0u8; w * h * A_STRIDE], stride: A_STRIDE });
+        textures.insert(dummy_a8_id, TextureData::new(dummy_a8_id, &vec![0u8; w * h * A_STRIDE], A_STRIDE));
         let dither_id = TextureId { name: DITHER_ID };
         let dither_matrix = vec![
             00, 48, 12, 60, 03, 51, 15, 63,
@@ -447,7 +457,7 @@ impl Device {
             10, 58, 06, 54, 09, 57, 05, 53,
             42, 26, 38, 22, 41, 25, 37, 21
         ];
-        textures.insert(dither_id, TextureData { id: dither_id, data: dither_matrix, stride: A_STRIDE });
+        textures.insert(dither_id, TextureData::new(dither_id, &dither_matrix, A_STRIDE));
 
         Device {
             device: device,
@@ -576,11 +586,8 @@ impl Device {
 
         let mut rng = OsRng::new().unwrap();
         let mut texture_id = TextureId::invalid();
-        loop {
+        while self.textures.contains_key(&texture_id) {
             texture_id.name = rng.gen_range(FIRST_UNRESERVED_ID, u32::max_value());
-            if !self.textures.contains_key(&texture_id) {
-                break;
-            }
         }
         texture_id
     }
@@ -588,10 +595,8 @@ impl Device {
     pub fn create_texture_id(&mut self,
                              _target: TextureTarget,
                              format: ImageFormat) -> TextureId {
-        let mut texture_ids = Vec::new();
         let (w, h) = self.color0.get_size();
         let texture_id = self.generate_texture_id();
-
         let stride = match format {
             ImageFormat::A8 => A_STRIDE,
             ImageFormat::RGBA8 => RGBA_STRIDE,
@@ -599,10 +604,8 @@ impl Device {
             _ => unimplemented!(),
         };
         let texture_data = vec![0u8; w * h * stride];
-        assert!(self.textures.contains_key(&texture_id) == false);
-        self.textures.insert(texture_id, TextureData {id: texture_id, data: texture_data, stride: stride });
-        texture_ids.push(texture_id);
-
+        assert!(!self.textures.contains_key(&texture_id));
+        self.textures.insert(texture_id, TextureData::new(texture_id, &texture_data, stride));
         texture_id
     }
 
@@ -629,9 +632,8 @@ impl Device {
             Some(data) => data.to_vec(),
             None => {
                 let (w, h) = self.color0.get_size();
-                let data = vec![0u8; w * h * texture.stride];
-                data
-            }
+                vec![0u8; w * h * texture.stride]
+            },
         };
         assert!(texture.data.len() == actual_pixels.len());
         mem::replace(&mut texture.data, actual_pixels);
@@ -646,7 +648,7 @@ impl Device {
                           _stride: Option<u32>,
                           data: &[u8]) {
         let texture = self.textures.get_mut(&texture_id).expect("Didn't find texture!");
-        assert!(texture.data.len() >= data.len());
+        assert!(!(texture.data.len() < data.len()));
         let (w, _) = self.color0.get_size();
         Device::update_texture_data(&mut texture.data, x0 as usize, y0 as usize, width as usize, height as usize, w, data, texture.stride);
     }
@@ -703,12 +705,12 @@ impl Device {
             }
         };
         match sampler {
-            TextureSampler::Color0 => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.color0, texture.data.as_slice(), RGBA_STRIDE),
-            TextureSampler::Color1 => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.color1, texture.data.as_slice(), RGBA_STRIDE),
-            TextureSampler::Color2 => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.color2, texture.data.as_slice(), RGBA_STRIDE),
-            TextureSampler::CacheA8 => Device::update_texture_u8::<_, A8>(&mut self.encoder, &self.cache_a8, texture.data.as_slice(), A_STRIDE),
-            TextureSampler::CacheRGBA8 => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.cache_rgba8, texture.data.as_slice(), RGBA_STRIDE),
-            TextureSampler::Dither => Device::update_texture_u8::<_, A8>(&mut self.encoder, &self.dither, texture.data.as_slice(), A_STRIDE),
+            TextureSampler::Color0 => Device::update_texture_surface(&mut self.encoder, &self.color0, texture.data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Color1 => Device::update_texture_surface(&mut self.encoder, &self.color1, texture.data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Color2 => Device::update_texture_surface(&mut self.encoder, &self.color2, texture.data.as_slice(), RGBA_STRIDE),
+            TextureSampler::CacheA8 => Device::update_texture_surface(&mut self.encoder, &self.cache_a8, texture.data.as_slice(), A_STRIDE),
+            TextureSampler::CacheRGBA8 => Device::update_texture_surface(&mut self.encoder, &self.cache_rgba8, texture.data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Dither => Device::update_texture_surface(&mut self.encoder, &self.dither, texture.data.as_slice(), A_STRIDE),
             _ => println!("There are only 5 samplers supported. {:?}", sampler),
         }
     }
@@ -716,7 +718,7 @@ impl Device {
     pub fn bind_yuv_texture(&mut self,
                         sampler: TextureSampler,
                         texture_id: TextureId) {
-        let mut texture = match self.textures.get_mut(&texture_id) {
+        let texture = match self.textures.get_mut(&texture_id) {
             Some(data) => data,
             None => {
                 println!("Didn't find texture! {}", texture_id.name);
@@ -726,9 +728,9 @@ impl Device {
         let (w, h) = self.color0.get_size();
         let new_data = Device::convert_data_to_rgba8(w, h, texture.data.as_slice(), texture.stride);
         match sampler {
-            TextureSampler::Color0 => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.color0, new_data.as_slice(), RGBA_STRIDE),
-            TextureSampler::Color1 => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.color1, new_data.as_slice(), RGBA_STRIDE),
-            TextureSampler::Color2 => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.color2, new_data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Color0 => Device::update_texture_surface(&mut self.encoder, &self.color0, new_data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Color1 => Device::update_texture_surface(&mut self.encoder, &self.color1, new_data.as_slice(), RGBA_STRIDE),
+            TextureSampler::Color2 => Device::update_texture_surface(&mut self.encoder, &self.color2, new_data.as_slice(), RGBA_STRIDE),
             _ => println!("The yuv image shouldn't use this sampler: {:?}", sampler),
         }
     }
@@ -749,15 +751,15 @@ impl Device {
                               sampler: TextureSampler,
                               data: &[f32]) {
         match sampler {
-            TextureSampler::Layers => Device::update_texture_f32(&mut self.encoder, &self.layers, data),
-            TextureSampler::RenderTasks => Device::update_texture_f32(&mut self.encoder, &self.render_tasks, data),
-            TextureSampler::Geometry => Device::update_texture_f32(&mut self.encoder, &self.prim_geo, data),
-            TextureSampler::SplitGeometry => Device::update_texture_f32(&mut self.encoder, &self.split_geo, data),
-            TextureSampler::Data16 => Device::update_texture_f32(&mut self.encoder, &self.data16, data),
-            TextureSampler::Data32 => Device::update_texture_f32(&mut self.encoder, &self.data32, data),
-            TextureSampler::Data64 => Device::update_texture_f32(&mut self.encoder, &self.data64, data),
-            TextureSampler::Data128 => Device::update_texture_f32(&mut self.encoder, &self.data128, data),
-            TextureSampler::ResourceRects => Device::update_texture_f32(&mut self.encoder, &self.resource_rects, data),
+            TextureSampler::Layers => Device::update_texture_surface(&mut self.encoder, &self.layers, data, RGBA_STRIDE),
+            TextureSampler::RenderTasks => Device::update_texture_surface(&mut self.encoder, &self.render_tasks, data, RGBA_STRIDE),
+            TextureSampler::Geometry => Device::update_texture_surface(&mut self.encoder, &self.prim_geo, data, RGBA_STRIDE),
+            TextureSampler::SplitGeometry => Device::update_texture_surface(&mut self.encoder, &self.split_geo, data, RGBA_STRIDE),
+            TextureSampler::Data16 => Device::update_texture_surface(&mut self.encoder, &self.data16, data, RGBA_STRIDE),
+            TextureSampler::Data32 => Device::update_texture_surface(&mut self.encoder, &self.data32, data, RGBA_STRIDE),
+            TextureSampler::Data64 => Device::update_texture_surface(&mut self.encoder, &self.data64, data, RGBA_STRIDE),
+            TextureSampler::Data128 => Device::update_texture_surface(&mut self.encoder, &self.data128, data, RGBA_STRIDE),
+            TextureSampler::ResourceRects => Device::update_texture_surface(&mut self.encoder, &self.resource_rects, data, RGBA_STRIDE),
             _ => println!("{:?} sampler is not supported", sampler),
         }
     }
@@ -766,7 +768,7 @@ impl Device {
                              sampler: TextureSampler,
                              data: &[u8]) {
         match sampler {
-            TextureSampler::Gradients => Device::update_texture_u8::<_, Rgba8>(&mut self.encoder, &self.gradient_data, data, RGBA_STRIDE),
+            TextureSampler::Gradients => Device::update_texture_surface(&mut self.encoder, &self.gradient_data, data, RGBA_STRIDE),
             _ => println!("{:?} sampler is not supported", sampler),
         }
     }
@@ -816,35 +818,17 @@ impl Device {
         self.encoder.draw(&program.slice, &program.get_pso(blendmode), &program.data);
     }
 
-    pub fn update_texture_u8<S, T>(encoder: &mut gfx::Encoder<R,CB>,
-                                   texture: &Texture<R, T>,
-                                   memory: &[u8],
-                                   stride: usize)
-        where S: SurfaceTyped + TextureSurface,
-              S::DataType: Copy,
-              T: Formatted<Surface=S>,
-              T::Channel: TextureChannel {
-        let tex = &texture.surface;
+    pub fn update_texture_surface<S, F, T>(encoder: &mut gfx::Encoder<R,CB>,
+                                           texture: &Texture<R, F>,
+                                           memory: &[T],
+                                           stride: usize)
+    where S: SurfaceTyped + TextureSurface,
+          S::DataType: Copy,
+          F: Formatted<Surface=S>,
+          F::Channel: TextureChannel,
+          T: Default + Clone + gfx::traits::Pod {
         let (width, height) = texture.get_size();
-        let img_info = gfx::texture::ImageInfoCommon {
-            xoffset: 0,
-            yoffset: 0,
-            zoffset: 0,
-            width: width as u16,
-            height: height as u16,
-            depth: 0,
-            format: (),
-            mipmap: 0,
-        };
-
-        let data = gfx::memory::cast_slice(memory);
-        encoder.update_texture::<_, T>(tex, None, img_info, data).unwrap();
-    }
-
-    pub fn update_texture_f32(encoder: &mut gfx::Encoder<R,CB>, texture: &Texture<R, Rgba32F>, memory: &[f32]) {
-        let tex = &texture.surface;
-        let (width, height) = texture.get_size();
-        let resized_data = Device::convert_sampler_data_f32(memory, (width * height * RGBA_STRIDE) as usize);
+        let resized_data = Device::convert_sampler_data(memory, (width * height * stride) as usize);
         let img_info = gfx::texture::ImageInfoCommon {
             xoffset: 0,
             yoffset: 0,
@@ -857,24 +841,14 @@ impl Device {
         };
 
         let data = gfx::memory::cast_slice(resized_data.as_slice());
-        encoder.update_texture::<_, Rgba32F>(tex, None, img_info, data).unwrap();
+        encoder.update_texture::<_, F>(&texture.surface, None, img_info, data).unwrap();
     }
 
-    fn convert_sampler_data_u8(data: &[u8], max_size: usize) -> Vec<u8> {
+    fn convert_sampler_data<T: Default + Clone>(data: &[T], max_size: usize) -> Vec<T> {
         let mut data = data.to_vec();
-        if data.len() < max_size {
-            let mut zeros = vec![0u8; max_size - data.len()];
-            data.append(&mut zeros);
-        }
-        assert!(data.len() == max_size);
-        data
-    }
-
-    fn convert_sampler_data_f32(data: &[f32], max_size: usize) -> Vec<f32> {
-        let mut data = data.to_vec();
-        if data.len() < max_size {
-            let mut zeros = vec![0f32; max_size - data.len()];
-            data.append(&mut zeros);
+        let len = data.len();
+        if len < max_size {
+            data.extend_from_slice(&vec![T::default(); max_size - len]);
         }
         assert!(data.len() == max_size);
         data
