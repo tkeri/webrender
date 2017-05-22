@@ -13,8 +13,7 @@ use std;
 use glutin;
 use gfx;
 use gfx::state::{Blend, BlendChannel, BlendValue, Equation, Factor};
-use gfx_core;
-use gfx_core::memory::Typed;
+use gfx::memory::Typed;
 use gfx::Factory;
 use gfx::traits::FactoryExt;
 use gfx::format::{DepthStencil as DepthFormat, Rgba32F as ColorFormat};
@@ -236,9 +235,9 @@ impl<R, T> Texture<R, T> where R: gfx::Resources, T: gfx::format::TextureFormat 
                 &tex, levels, format::Swizzle::new()
             ));
             let format = match surface {
-                gfx_core::format::SurfaceType::R8 => ImageFormat::A8,
-                gfx_core::format::SurfaceType::R8_G8_B8_A8 => ImageFormat::RGBA8,
-                gfx_core::format::SurfaceType::R32_G32_B32_A32 => ImageFormat::RGBAF32,
+                gfx::format::SurfaceType::R8 => ImageFormat::A8,
+                gfx::format::SurfaceType::R8_G8_B8_A8 => ImageFormat::RGBA8,
+                gfx::format::SurfaceType::R32_G32_B32_A32 => ImageFormat::RGBAF32,
                 _ => unimplemented!(),
             };
             (tex, view, format)
@@ -375,8 +374,8 @@ pub struct Device {
     resource_rects: Texture<R, Rgba32F>,
     split_geo: Texture<R, Rgba32F>,
     max_texture_size: u32,
-    main_color: gfx_core::handle::RenderTargetView<R, ColorFormat>,
-    main_depth: gfx_core::handle::DepthStencilView<R, DepthFormat>,
+    main_color: gfx::handle::RenderTargetView<R, ColorFormat>,
+    main_depth: gfx::handle::DepthStencilView<R, DepthFormat>,
     vertex_buffer: gfx::handle::Buffer<R, Position>,
     slice: gfx::Slice<R>,
 }
