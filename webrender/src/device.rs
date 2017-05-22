@@ -16,7 +16,7 @@ use gfx::state::{Blend, BlendChannel, BlendValue, Equation, Factor};
 use gfx::memory::Typed;
 use gfx::Factory;
 use gfx::traits::FactoryExt;
-use gfx::format::{DepthStencil as DepthFormat, Rgba32F as ColorFormat};
+use gfx::format::{DepthStencil as DepthFormat, Rgba8 as ColorFormat};
 use gfx_device_gl as device_gl;
 use gfx_device_gl::{Resources as R, CommandBuffer as CB};
 use gfx::CombinedError;
@@ -127,8 +127,8 @@ gfx_defines! {
         split_geometry: gfx::TextureSampler<[f32; 4]> = "sSplitGeometry",
 
         out_color: gfx::RawRenderTarget = ("oFragColor",
-                                           Format(gfx::format::SurfaceType::R32_G32_B32_A32,
-                                                  gfx::format::ChannelType::Float),
+                                           Format(gfx::format::SurfaceType::R8_G8_B8_A8,
+                                                  gfx::format::ChannelType::Unorm),
                                            gfx::state::MASK_ALL,
                                            None),
         out_depth: gfx::DepthTarget<DepthFormat> = gfx::preset::depth::LESS_EQUAL_WRITE,
@@ -490,7 +490,7 @@ impl Device {
             frag_src,
             primitive::Init {
                 out_color: ("oFragColor",
-                            Format(gfx::format::SurfaceType::R32_G32_B32_A32, gfx::format::ChannelType::Float),
+                            Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Unorm),
                             gfx::state::MASK_ALL,
                             Some(ALPHA)),
                 .. primitive::new()
@@ -502,7 +502,7 @@ impl Device {
             frag_src,
             primitive::Init {
                 out_color: ("oFragColor",
-                            Format(gfx::format::SurfaceType::R32_G32_B32_A32, gfx::format::ChannelType::Float),
+                            Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Unorm),
                             gfx::state::MASK_ALL,
                             Some(PREM_ALPHA)),
                 .. primitive::new()
@@ -514,7 +514,7 @@ impl Device {
             frag_src,
             primitive::Init {
                 out_color: ("oFragColor",
-                            Format(gfx::format::SurfaceType::R32_G32_B32_A32, gfx::format::ChannelType::Float),
+                            Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Unorm),
                             gfx::state::MASK_ALL,
                             Some(SUBPIXEL)),
                 .. primitive::new()
