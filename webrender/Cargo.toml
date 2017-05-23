@@ -33,9 +33,8 @@ thread_profiler = "0.1.1"
 plane-split = "0.3"
 
 rand = "0.3"
-gfx = "0.14"
-gfx_core = "0.6.0"
-gfx_device_gl = "0.13"
+gfx = { git = 'https://github.com/gfx-rs/gfx'}
+gfx_device_gl = { git = 'https://github.com/gfx-rs/gfx'}
 servo-glutin = "0.10.1"
 
 [dev-dependencies]
