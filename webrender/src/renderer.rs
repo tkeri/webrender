@@ -12,7 +12,7 @@
 use device::{Device, TextureId, TextureFilter, TextureTarget, Program, ShaderError};
 use device::{VECS_PER_DATA_16, VECS_PER_DATA_32, VECS_PER_DATA_64, VECS_PER_DATA_128};
 use device::{VECS_PER_LAYER, VECS_PER_PRIM_GEOM, VECS_PER_RENDER_TASK};
-use device::{VECS_PER_RESOURCE_RECTS, /*VECS_PER_GRADIENT_DATA,*/ VECS_PER_SPLIT_GEOM};
+use device::{VECS_PER_RESOURCE_RECTS, VECS_PER_GRADIENT_DATA, VECS_PER_SPLIT_GEOM};
 use device::RGBA_STRIDE;
 use euclid::Matrix4D;
 use fnv::FnvHasher;
@@ -210,7 +210,7 @@ impl GpuStoreLayout for GradientDataTextureLayout {
     }
 }
 
-//type GradientDataTexture = GpuDataTexture<GradientDataTextureLayout>;
+type GradientDataTexture = GpuDataTexture<GradientDataTextureLayout>;
 pub type GradientDataStore = GpuStore<GradientData, GradientDataTextureLayout>;
 
 pub struct SplitGeometryTextureLayout;
@@ -242,7 +242,7 @@ struct GpuDataTextures {
     data64_texture: VertexDataTexture,
     data128_texture: VertexDataTexture,
     resource_rects_texture: VertexDataTexture,
-    //gradient_data_texture: GradientDataTexture,
+    gradient_data_texture: GradientDataTexture,
     split_geometry_texture: SplitGeometryTexture,
 }
 
@@ -257,7 +257,7 @@ impl GpuDataTextures {
             data64_texture: VertexDataTexture::new(),
             data128_texture: VertexDataTexture::new(),
             resource_rects_texture: VertexDataTexture::new(),
-            //gradient_data_texture: GradientDataTexture::new(),
+            gradient_data_texture: GradientDataTexture::new(),
             split_geometry_texture: SplitGeometryTexture::new(),
         }
     }
@@ -272,36 +272,7 @@ impl GpuDataTextures {
         self.layer_texture.init(device, TextureSampler::Layers, &mut frame.layer_texture_data, VECS_PER_LAYER * RGBA_STRIDE);
         self.render_task_texture.init(device, TextureSampler::RenderTasks, &mut frame.render_task_data, VECS_PER_RENDER_TASK * RGBA_STRIDE);
         self.split_geometry_texture.init(device, TextureSampler::SplitGeometry, &mut frame.gpu_split_geometry, VECS_PER_SPLIT_GEOM * RGBA_STRIDE);
-        //self.gradient_data_texture.init(device, TextureSampler::Gradients, &mut frame.gpu_gradient_data, VECS_PER_GRADIENT_DATA * RGBA_STRIDE);
-        device.update_sampler_u8(TextureSampler::Gradients,
-                                 self.convert_gradient_data(&mut frame.gpu_gradient_data).as_slice());
-    }
-
-    fn convert_gradient_data(&self, gradient_data_vec: &mut [GradientData]) -> Vec<u8> {
-        let mut data: Vec<u8> = vec!();
-        for gradient_data in gradient_data_vec {
-            for entry in gradient_data.colors_high.iter() {
-                data.push(entry.start_color.r);
-                data.push(entry.start_color.g);
-                data.push(entry.start_color.b);
-                data.push(entry.start_color.a);
-                data.push(entry.end_color.r);
-                data.push(entry.end_color.g);
-                data.push(entry.end_color.b);
-                data.push(entry.end_color.a);
-            }
-            for entry in gradient_data.colors_low.iter() {
-                data.push(entry.start_color.r);
-                data.push(entry.start_color.g);
-                data.push(entry.start_color.b);
-                data.push(entry.start_color.a);
-                data.push(entry.end_color.r);
-                data.push(entry.end_color.g);
-                data.push(entry.end_color.b);
-                data.push(entry.end_color.a);
-            }
-        }
-        data
+        self.gradient_data_texture.init(device, TextureSampler::Gradients, &mut frame.gpu_gradient_data, VECS_PER_GRADIENT_DATA * RGBA_STRIDE);
     }
 }
 

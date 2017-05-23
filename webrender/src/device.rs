@@ -20,7 +20,7 @@ use gfx::format::{DepthStencil as DepthFormat, Rgba8 as ColorFormat};
 use gfx_device_gl as device_gl;
 use gfx_device_gl::{Resources as R, CommandBuffer as CB};
 use gfx::CombinedError;
-use gfx::format::{Format, Formatted, R8, Rgba32F, Rgba8, SurfaceTyped, TextureChannel, TextureSurface, Unorm};
+use gfx::format::{Bgra8, Format, Formatted, R8, Rgba32F, Rgba8, SurfaceTyped, TextureChannel, TextureSurface, Unorm};
 use tiling::PrimitiveInstance;
 use renderer::{BlendMode, DITHER_ID, DUMMY_A8_ID, DUMMY_RGBA8_ID, MAX_VERTEX_TEXTURE_WIDTH};
 
@@ -29,7 +29,7 @@ pub const VECS_PER_DATA_16: usize = 1;
 pub const VECS_PER_DATA_32: usize = 2;
 pub const VECS_PER_DATA_64: usize = 4;
 pub const VECS_PER_DATA_128: usize = 8;
-pub const VECS_PER_GRADIENT_DATA: usize = 4;
+pub const VECS_PER_GRADIENT_DATA: usize = 512;
 pub const VECS_PER_LAYER: usize = 13;
 pub const VECS_PER_PRIM_GEOM: usize = 2;
 pub const VECS_PER_RENDER_TASK: usize = 3;
@@ -235,7 +235,7 @@ impl<R, T> Texture<R, T> where R: gfx::Resources, T: gfx::format::TextureFormat 
             ));
             let format = match surface {
                 gfx::format::SurfaceType::R8 => ImageFormat::A8,
-                gfx::format::SurfaceType::R8_G8_B8_A8 => ImageFormat::RGBA8,
+                gfx::format::SurfaceType::R8_G8_B8_A8 | gfx::format::SurfaceType::B8_G8_R8_A8 => ImageFormat::RGBA8,
                 gfx::format::SurfaceType::R32_G32_B32_A32 => ImageFormat::RGBAF32,
                 _ => unimplemented!(),
             };
@@ -380,7 +380,7 @@ pub struct Device {
     data32: Texture<R, Rgba32F>,
     data64: Texture<R, Rgba32F>,
     data128: Texture<R, Rgba32F>,
-    gradient_data: Texture<R, Rgba8>,
+    gradient_data: Texture<R, Bgra8>,
     layers: Texture<R, Rgba32F>,
     prim_geo: Texture<R, Rgba32F>,
     render_tasks: Texture<R, Rgba32F>,
@@ -429,7 +429,7 @@ impl Device {
         let data32_tex = Texture::empty(&mut factory, [MAX_VERTEX_TEXTURE_WIDTH / VECS_PER_DATA_32, TEXTURE_HEIGTH]).unwrap();
         let data64_tex = Texture::empty(&mut factory, [MAX_VERTEX_TEXTURE_WIDTH / VECS_PER_DATA_64, TEXTURE_HEIGTH]).unwrap();
         let data128_tex = Texture::empty(&mut factory, [MAX_VERTEX_TEXTURE_WIDTH / VECS_PER_DATA_128, TEXTURE_HEIGTH * 4]).unwrap();
-        let gradient_data = Texture::empty(&mut factory, [MAX_VERTEX_TEXTURE_WIDTH / VECS_PER_GRADIENT_DATA , TEXTURE_HEIGTH * 10]).unwrap();
+        let gradient_data = Texture::empty(&mut factory, [MAX_VERTEX_TEXTURE_WIDTH / std::mem::size_of::<f32>(), TEXTURE_HEIGTH * 10]).unwrap();
         let layers_tex = Texture::empty(&mut factory, [MAX_VERTEX_TEXTURE_WIDTH / VECS_PER_LAYER, 64]).unwrap();
         let prim_geo_tex = Texture::empty(&mut factory, [MAX_VERTEX_TEXTURE_WIDTH / VECS_PER_PRIM_GEOM, TEXTURE_HEIGTH]).unwrap();
         let render_tasks_tex = Texture::empty(&mut factory, [MAX_VERTEX_TEXTURE_WIDTH / VECS_PER_RENDER_TASK, TEXTURE_HEIGTH]).unwrap();
