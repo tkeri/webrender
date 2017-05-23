@@ -20,7 +20,7 @@ use gfx::format::{DepthStencil as DepthFormat, Rgba8 as ColorFormat};
 use gfx_device_gl as device_gl;
 use gfx_device_gl::{Resources as R, CommandBuffer as CB};
 use gfx::CombinedError;
-use gfx::format::{Bgra8, Format, Formatted, R8, Rgba32F, Rgba8, SurfaceTyped, TextureChannel, TextureSurface, Unorm};
+use gfx::format::{Bgra8, Format, Formatted, R8, Rgba32F, SurfaceTyped, TextureChannel, TextureSurface, Unorm};
 use tiling::PrimitiveInstance;
 use renderer::{BlendMode, DITHER_ID, DUMMY_A8_ID, DUMMY_RGBA8_ID, MAX_VERTEX_TEXTURE_WIDTH};
 
@@ -370,12 +370,12 @@ pub struct Device {
     factory: device_gl::Factory,
     encoder: gfx::Encoder<R,CB>,
     textures: HashMap<TextureId, TextureData>,
-    color0: Texture<R, Rgba8>,
-    color1: Texture<R, Rgba8>,
-    color2: Texture<R, Rgba8>,
+    color0: Texture<R, Bgra8>,
+    color1: Texture<R, Bgra8>,
+    color2: Texture<R, Bgra8>,
     dither: Texture<R, A8>,
     cache_a8: Texture<R, A8>,
-    cache_rgba8: Texture<R, Rgba8>,
+    cache_rgba8: Texture<R, Bgra8>,
     data16: Texture<R, Rgba32F>,
     data32: Texture<R, Rgba32F>,
     data64: Texture<R, Rgba32F>,
@@ -675,21 +675,7 @@ impl Device {
         assert_eq!(width * height * stride, new_data.len());
         for j in 0..height {
             for i in 0..width*stride {
-                // We do nothing if it is not rgba format,
-                // otherwise we have bgra values and switch the red and blue bytes.
-                let k = {
-                    if stride != RGBA_STRIDE {
-                        i
-                    } else if i % 4 == 0 {
-                        i + 2
-                    } else if i % 4 == 2 {
-                        i - 2
-                    } else {
-                        i
-                    }
-                };
-                // Write the data array with the new values starting from the (offset * stride) position.
-                data[((i+x_offset*stride)+(j+y_offset)*max_width*stride)] = new_data[(k+j*width*stride)];
+                data[((i+x_offset*stride)+(j+y_offset)*max_width*stride)] = new_data[(i+j*width*stride)];
             }
         }
     }
