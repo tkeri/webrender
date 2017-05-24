@@ -702,8 +702,8 @@ impl Device {
     }
 
     pub fn bind_yuv_texture(&mut self,
-                        sampler: TextureSampler,
-                        texture_id: TextureId) {
+                            sampler: TextureSampler,
+                            texture_id: TextureId) {
         let texture = match self.textures.get_mut(&texture_id) {
             Some(data) => data,
             None => {

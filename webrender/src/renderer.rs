@@ -53,6 +53,8 @@ use webrender_traits::{DevicePoint, DeviceUintSize};
 use webrender_traits::BlobImageRenderer;
 use webrender_traits::{channel, FontRenderMode};
 use webrender_traits::VRCompositorHandler;
+use webrender_traits::{YuvColorSpace, YuvFormat};
+use webrender_traits::{YUV_COLOR_SPACES, YUV_FORMATS};
 
 use glutin;
 
@@ -310,7 +312,7 @@ pub struct Renderer {
     ps_text_run: ProgramPair,
     ps_text_run_subpixel: ProgramPair,
     ps_image: ProgramPair,
-    ps_yuv_image: ProgramPair,
+    ps_yuv_image: Vec<ProgramPair>,
     ps_border_corner: ProgramPair,
     ps_border_edge: ProgramPair,
     ps_gradient: ProgramPair,
@@ -438,7 +440,14 @@ impl Renderer {
         let ps_text_run = create_programs!(device, "ps_text_run");
         let ps_text_run_subpixel = create_programs!(device, "ps_text_run_subpixel");
         let ps_image = create_programs!(device, "ps_image");
-        let ps_yuv_image = create_programs!(device, "ps_yuv_image");
+        let ps_yuv_image =
+            vec![ProgramPair(create_programs!(device, "ps_yuv_image_nv12_601")),
+                 ProgramPair(create_programs!(device, "ps_yuv_image_planar_601")),
+                 ProgramPair(create_programs!(device, "ps_yuv_image_interleaved_601")),
+                 ProgramPair(create_programs!(device, "ps_yuv_image_nv12_709")),
+                 ProgramPair(create_programs!(device, "ps_yuv_image_planar_709")),
+                 ProgramPair(create_programs!(device, "ps_yuv_image_interleaved_709"))];
+
         let ps_border_corner = create_programs!(device, "ps_border_corner");
         let ps_border_edge = create_programs!(device, "ps_border_edge");
 
@@ -544,7 +553,7 @@ impl Renderer {
             ps_text_run: ProgramPair(ps_text_run),
             ps_text_run_subpixel: ProgramPair(ps_text_run_subpixel),
             ps_image: ProgramPair(ps_image),
-            ps_yuv_image: ProgramPair(ps_yuv_image),
+            ps_yuv_image: ps_yuv_image,
             ps_border_corner: ProgramPair(ps_border_corner),
             ps_border_edge: ProgramPair(ps_border_edge),
             ps_gradient: ProgramPair(ps_gradient),
@@ -577,9 +586,9 @@ impl Renderer {
         Ok((renderer, sender))
     }
 
-    /*pub fn gl(&self) -> &gl::Gl {
-        self.device.gl()
-    }*/
+    fn get_yuv_shader_index(buffer_kind: ImageBufferKind, format: YuvFormat, color_space: YuvColorSpace) -> usize {
+        ((buffer_kind as usize) * YUV_FORMATS.len() + (format as usize)) * YUV_COLOR_SPACES.len() + (color_space as usize)
+    }
 
     /// Sets the new RenderNotifier.
     ///
@@ -896,6 +905,7 @@ impl Renderer {
 
         match batch.key.kind {
             AlphaBatchKind::YuvImage(..) => {
+                self.device.flush();
                 for i in 0..batch.key.textures.colors.len() {
                     let texture_id = self.resolve_source_texture(&batch.key.textures.colors[i]);
                     self.device.bind_yuv_texture(TextureSampler::color(i), texture_id);
@@ -929,7 +939,12 @@ impl Renderer {
                     }
                 },
                 AlphaBatchKind::Image(..) => self.ps_image.get(transform_kind),
-                AlphaBatchKind::YuvImage(..) => self.ps_yuv_image.get(transform_kind),
+                AlphaBatchKind::YuvImage(_, format, color_space) => {
+                    let shader_index = Renderer::get_yuv_shader_index(ImageBufferKind::Texture2D,
+                                                                      format,
+                                                                      color_space);
+                    self.ps_yuv_image[shader_index].get(transform_kind)
+                },
                 AlphaBatchKind::BorderCorner => self.ps_border_corner.get(transform_kind),
                 AlphaBatchKind::BorderEdge => self.ps_border_edge.get(transform_kind),
                 AlphaBatchKind::AlignedGradient => self.ps_gradient.get(transform_kind),
