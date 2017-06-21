@@ -197,7 +197,7 @@ fn body(api: &RenderApi,
         repeat: false,
     };
     let complex = ComplexClipRegion::new((50, 50).to(150, 150), BorderRadius::uniform(20.0));
-    let id = builder.define_clip(None, bounds, vec![complex], Some(mask));
+    let id = builder.define_clip(None, bounds, vec![], None);
     builder.push_clip_id(id);
 
     let bounds = (100, 100).to(200, 200);
