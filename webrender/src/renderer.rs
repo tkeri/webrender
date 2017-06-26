@@ -372,10 +372,7 @@ impl<L: GpuStoreLayout> GpuDataTexture<L> {
             ImageFormat::RGBAF32 => {
                 device.update_sampler_f32(sampler, gfx::memory::cast_slice(data));
             },
-            ImageFormat::BGRA8 => {
-                device.update_sampler_u8(sampler, gfx::memory::cast_slice(data));
-            },
-            _ => unimplemented!(), // Invalid, A8, RGB8, RG8
+            _ => unimplemented!(), // Invalid, A8, RGB8, RG8, BGRA8
         }
     }
 }
@@ -566,6 +563,11 @@ impl ProgramPair {
             TransformedRectKind::Complex => &mut (self.0).1,
         }
     }
+
+    pub fn reset_upload_offset(&mut self) {
+        (self.0).0.reset_upload_offset();
+        (self.0).1.reset_upload_offset();
+    }
 }
 
 impl Renderer {
@@ -666,6 +668,10 @@ impl Renderer {
                                        } else {
                                            None
                                        };
+
+        if let Some(id) = dither_matrix_texture_id {
+           device.bind_texture(TextureSampler::Dither, id);
+        }
 
         let gpu_data_textures = GpuDataTextures::new();
 
@@ -958,12 +964,14 @@ impl Renderer {
                         self.update_gpu_cache(frame);
 
                         //self.device.bind_texture(TextureSampler::ResourceCache, self.gpu_cache_texture.texture_id);
-                        self.device.flush();
+                        //self.device.flush();
+
 
                         //frame_id
                     //};
 
                     self.draw_tile_frame(frame, &framebuffer_size);
+                    self.flush();
 
                     //self.gpu_profile.end_frame();
                     //cpu_frame_id
@@ -1007,6 +1015,35 @@ impl Renderer {
 
             // Restore frame - avoid borrow checker!
             self.current_frame = Some(frame);
+        }
+    }
+
+    fn flush(&mut self) {
+        self.device.flush();
+        self.cs_box_shadow.reset_upload_offset();
+        self.cs_text_run.reset_upload_offset();
+        self.cs_blur.reset_upload_offset();
+        self.cs_clip_rectangle.reset_upload_offset();
+        self.cs_clip_image.reset_upload_offset();
+        self.cs_clip_border.reset_upload_offset();
+        self.ps_rectangle.reset_upload_offset();
+        self.ps_rectangle_clip.reset_upload_offset();
+        self.ps_text_run.reset_upload_offset();
+        self.ps_text_run_subpixel.reset_upload_offset();
+        self.ps_image.reset_upload_offset();
+        self.ps_border_corner.reset_upload_offset();
+        self.ps_border_edge.reset_upload_offset();
+        self.ps_gradient.reset_upload_offset();
+        self.ps_angle_gradient.reset_upload_offset();
+        self.ps_radial_gradient.reset_upload_offset();
+        self.ps_box_shadow.reset_upload_offset();
+        self.ps_cache_image.reset_upload_offset();
+        self.ps_blend.reset_upload_offset();
+        self.ps_hw_composite.reset_upload_offset();
+        self.ps_split_composite.reset_upload_offset();
+        self.ps_composite.reset_upload_offset();
+        for mut program in &mut self.ps_yuv_image {
+            program.reset_upload_offset();
         }
     }
 
@@ -1261,11 +1298,8 @@ impl Renderer {
                 AlphaBatchKind::Line => self.ps_line.get(transform_kind),
             };
 
-            if let Some(id) = self.dither_matrix_texture_id {
-                self.device.bind_texture(TextureSampler::Dither, id);
-            }
             self.device.draw(&mut program, projection, &batch.instances, &batch.key.blend_mode, enable_depth_write);
-            self.device.flush();
+            //self.device.flush();
         }
 
         // Handle special case readback for composites.
@@ -1345,7 +1379,7 @@ impl Renderer {
             //self.device.set_blend(false);
             //self.device.set_blend_mode_alpha();
             match render_target {
-                Some(..) if self.enable_clear_scissor => {
+                /*Some(..) if self.enable_clear_scissor => {
                     // TODO(gw): Applying a scissor rect and minimal clear here
                     // is a very large performance win on the Intel and nVidia
                     // GPUs that I have tested with. It's possible it may be a
@@ -1354,7 +1388,9 @@ impl Renderer {
                     //self.device.clear_target_rect(clear_color,
                     //                              Some(1.0),
                     //                              target.used_rect());
-                }
+                    //unimplemented!();
+                    println!("SCISSOR {:?}", target.used_rect());
+                }*/
                 _ => {
                     self.device.clear_target(clear_color, Some(1.0));
                 }
@@ -1445,6 +1481,7 @@ impl Renderer {
             // self.device.clear_target_rect(Some(clear_color),
             //                               None,
             //                               target.used_rect());
+            // self.device.clear_target(Some(clear_color), Some(1.0));
         }
 
         // Draw the clip items into the tiled alpha mask.
@@ -1457,13 +1494,13 @@ impl Renderer {
             // in regions below.
             if !target.clip_batcher.border_clears.is_empty() {
                 println!("cs_clip_border, border_clears");
-                self.device.draw_clip(&mut self.cs_clip_border, projection, &target.clip_batcher.border_clears, &BlendMode::None);
+                self.device.draw_clip(&mut self.cs_clip_border, projection, &target.clip_batcher.border_clears, &BlendMode::None, render_target.0);
             }
 
             // Draw any dots or dashes for border corners.
             if !target.clip_batcher.borders.is_empty() {
                 println!("cs_clip_border, borders");
-                self.device.draw_clip(&mut self.cs_clip_border, projection, &target.clip_batcher.borders, &BlendMode::Max);
+                self.device.draw_clip(&mut self.cs_clip_border, projection, &target.clip_batcher.borders, &BlendMode::Max, render_target.0);
             }
 
             // switch to multiplicative blending
@@ -1475,8 +1512,8 @@ impl Renderer {
                 self.device.draw_clip(&mut self.cs_clip_rectangle,
                                       projection,
                                       &target.clip_batcher.rectangles,
-                                      &blend_mode/*,
-                                      render_target.0*/);
+                                      &blend_mode,
+                                      render_target.0);
             }
             // draw image masks
             for (mask_texture_id, items) in target.clip_batcher.images.iter() {
@@ -1484,7 +1521,7 @@ impl Renderer {
                 self.device.bind_texture(TextureSampler::Color0, texture_id);
 
                 println!("cs_clip_image");
-                self.device.draw_clip(&mut self.cs_clip_image, projection, &items, &blend_mode);
+                self.device.draw_clip(&mut self.cs_clip_image, projection, &items, &blend_mode, render_target.0);
             }
         }
     }
@@ -1661,6 +1698,7 @@ impl Renderer {
                                            *size,
                                            &projection);
                 }
+                //self.flush();
 
                 for (target_index, target) in pass.color_targets.targets.iter().enumerate() {
                     let render_target = pass.color_texture_id.map(|texture_id| {
@@ -1675,6 +1713,7 @@ impl Renderer {
                                            &projection);
 
                 }
+                //self.flush();
 
                 src_color_id = pass.color_texture_id.unwrap_or(self.dummy_cache_texture_id);
                 src_alpha_id = pass.alpha_texture_id.unwrap_or(self.dummy_cache_texture_a8_id);
