@@ -71,7 +71,8 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
 
     for (filename, file_source) in shaders {
         let is_prim = filename.starts_with("ps_");
-        let is_clip = filename.starts_with("cs_");
+        let is_cache = filename.starts_with("cs_");
+        let is_clip_cache = filename.starts_with("cs_clip");
         let is_vert = filename.ends_with(".vs");
         let is_frag = filename.ends_with(".fs");
         let is_ps_rect = filename.starts_with("ps_rectangle");
@@ -83,9 +84,10 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
         let use_dither  = filename.starts_with("ps_gradient") ||
                           filename.starts_with("ps_angle_gradient") ||
                           filename.starts_with("ps_radial_gradient");
+        let is_ps_yuv = filename.starts_with("ps_yuv");
         // The shader must be primitive or clip (only one of them)
         // and it must be fragment or vertex shader (only one of them), else we skip it.
-        if !(is_prim ^ is_clip) || !(is_vert ^ is_frag) {
+        if !(is_prim ^ is_cache) || !(is_vert ^ is_frag) {
             continue;
         }
 
@@ -121,13 +123,29 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
             build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_DITHERING\n");
         }
 
+        if is_ps_yuv {
+            build_configs = vec!["// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_NV12\n"];
+            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n");
+            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n");
+            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_NV12\n#define WR_FEATURE_YUV_REC709\n");
+            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_YUV_REC709\n");
+            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n#define WR_FEATURE_YUV_REC709\n");
+            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_NV12\n");
+            build_configs.push("#define WR_FEATURE_TRANSFORM\n");
+            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n");
+            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_NV12\n#define WR_FEATURE_YUV_REC709\n");
+            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_YUV_REC709\n");
+            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n#define WR_FEATURE_YUV_REC709\n");
+
+        }
+
         for (iter, config_prefix) in build_configs.iter().enumerate() {
             let mut shader_source = String::new();
             shader_source.push_str(shader_prefix.as_str());
             shader_source.push_str(config_prefix);
             shader_source.push_str(&get_shader_source(&shared_src));
             shader_source.push_str(&get_shader_source(&prim_shared_src));
-            if is_clip {
+            if is_clip_cache {
                 shader_source.push_str(&get_shader_source(&clip_shared_src));
             }
             if let Some(optional_src) = shaders.get(base_filename) {
@@ -135,6 +153,7 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
             }
             shader_source.push_str(&get_shader_source(&file_source));
             let mut file_name = String::from(base_filename);
+            if !is_ps_yuv {
             // The following cases are possible:
             // 0: Default, transfrom feature is enabled.
             //    Except for ps_blend, ps_hw_composite, ps_composite and ps_split_composite shaders.
@@ -144,36 +163,53 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
             //    and the `clip`/`subpixel AA`/`dither`, transfrom features are enabled.
             // 3: If the shader is the `ps_rectangle`/`ps_text_run`/`gradient` shader
             //    and the `clip`/`subpixel AA`/`dither` feature is enabled but the the transfrom feature is disabled.
-            match iter {
-                0 => {
-                    if is_prim && !(is_ps_blend || is_ps_hw_composite || is_ps_composite || is_ps_split_composite) {
-                        file_name.push_str("_transform");
-                    }
-                },
-                1 => {},
-                2 => {
-                    if is_ps_rect {
-                        file_name.push_str("_clip_transform");
-                    }
-                    if is_ps_text_run {
-                        file_name.push_str("_subpixel_transform");
-                    }
-                    if use_dither {
-                        file_name.push_str("_dither_transform");
-                    }
-                },
-                3 => {
-                    if is_ps_rect {
-                        file_name.push_str("_clip");
-                    }
-                    if is_ps_text_run {
-                        file_name.push_str("_subpixel");
-                    }
-                    if use_dither {
-                        file_name.push_str("_dither");
-                    }
-                },
-                _ => unreachable!(),
+                match iter {
+                    0 => {
+                        if is_prim && !(is_ps_blend || is_ps_hw_composite || is_ps_composite || is_ps_split_composite) {
+                            file_name.push_str("_transform");
+                        }
+                    },
+                    1 => {},
+                    2 => {
+                        if is_ps_rect {
+                            file_name.push_str("_clip_transform");
+                        }
+                        if is_ps_text_run {
+                            file_name.push_str("_subpixel_transform");
+                        }
+                        if use_dither {
+                            file_name.push_str("_dither_transform");
+                        }
+                    },
+                    3 => {
+                        if is_ps_rect {
+                            file_name.push_str("_clip");
+                        }
+                        if is_ps_text_run {
+                            file_name.push_str("_subpixel");
+                        }
+                        if use_dither {
+                            file_name.push_str("_dither");
+                        }
+                    },
+                    _ => unreachable!(),
+                }
+            } else {
+                match iter {
+                    0 => file_name.push_str("_nv12_601"),
+                    1 => file_name.push_str("_planar_601"),
+                    2 => file_name.push_str("_interleaved_601"),
+                    3 => file_name.push_str("_nv12_709"),
+                    4 => file_name.push_str("_planar_709"),
+                    5 => file_name.push_str("_interleaved_709"),
+                    6 => file_name.push_str("_nv12_601_transform"),
+                    7 => file_name.push_str("_planar_601_transform"),
+                    8 => file_name.push_str("_interleaved_601_transform"),
+                    9 => file_name.push_str("_nv12_709_transform"),
+                    10 => file_name.push_str("_planar_709_transform"),
+                    11 => file_name.push_str("_interleaved_709_transform"),
+                    _ => unreachable!(),
+                }
             }
             if is_vert {
                 file_name.push_str(".vert");
