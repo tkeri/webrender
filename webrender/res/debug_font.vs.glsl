@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-in vec4 aColor;
-in vec4 aColorTexCoord;
+layout(location = 0) in vec4 aColor;
+layout(location = 1) in vec4 aColorTexCoord;
 
-varying vec2 vColorTexCoord;
-varying vec4 vColor;
+layout(location = 0) out vec2 vColorTexCoord;
+layout(location = 1) out vec4 vColor;
 
 void main(void)
 {

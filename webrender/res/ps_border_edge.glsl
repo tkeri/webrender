@@ -2,16 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-flat varying vec4 vColor0;
-flat varying vec4 vColor1;
-flat varying vec2 vEdgeDistance;
-flat varying float vAxisSelect;
-flat varying float vAlphaSelect;
-flat varying vec4 vClipParams;
-flat varying float vClipSelect;
+layout(location = 6) flat varying vec4 vColor0;
+layout(location = 7) flat varying vec4 vColor1;
+layout(location = 8) flat varying vec2 vEdgeDistance;
+layout(location = 9) flat varying float vAxisSelect;
+layout(location = 10) flat varying float vAlphaSelect;
+layout(location = 11) flat varying vec4 vClipParams;
+layout(location = 12) flat varying float vClipSelect;
 
 #ifdef WR_FEATURE_TRANSFORM
-varying vec3 vLocalPos;
+layout(location = 13) varying vec3 vLocalPos;
 #else
-varying vec2 vLocalPos;
+layout(location = 13) varying vec2 vLocalPos;
 #endif

@@ -7,9 +7,10 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::fs::{canonicalize, read_dir, File};
+use std::process::{self, Command, Stdio};
 
 #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
-const SHADER_VERSION: &'static str = "#version 150\n";
+const SHADER_VERSION: &'static str = "#version 450\n";
 
 #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 const SHADER_VERSION: &'static str = "#version 300 es\n";
@@ -39,7 +40,7 @@ fn write_shaders(glsl_files: Vec<PathBuf>, shader_file_path: &Path) {
     write!(shader_file, "}}\n").unwrap();
 }
 
-fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
+fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) -> Vec<String> {
     fn gen_shaders(glsl_files: Vec<PathBuf>) -> HashMap<String, String> {
         let mut shaders: HashMap<String, String> = HashMap::with_capacity(glsl_files.len());
         for glsl in glsl_files {
@@ -68,6 +69,7 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
     let shared_src = shaders.get("shared").unwrap();
     let prim_shared_src = shaders.get("prim_shared").unwrap();
     let clip_shared_src = shaders.get("clip_shared").unwrap();
+    let mut file_name_vector = vec![];
 
     for (filename, file_source) in shaders {
         let is_prim = filename.starts_with("ps_");
@@ -216,9 +218,33 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) {
             } else {
                 file_name.push_str(".frag");
             }
-            let file_path = Path::new(&out_dir).join(file_name);
+            let file_path = Path::new(&out_dir).join(&file_name);
             let mut file = File::create(file_path).unwrap();
             write!(file, "{}", shader_source).unwrap();
+            file_name_vector.push(file_name);
+        }
+    }
+    return file_name_vector
+}
+
+fn compile_spirv(file_name_vector: Vec<String>, out_dir: String) {
+    for mut file_name in file_name_vector {
+        let file_path = Path::new(&out_dir).join(&file_name);
+        file_name.push_str(".spv");
+        let spirv_file_path = Path::new(&out_dir).join(&file_name);
+
+        let mut command = Command::new("glslangValidator");
+        command.arg("-V");
+        command.arg("-o");
+        command.arg(&spirv_file_path);
+        command.arg(&file_path);
+        println!("{:?}", command);
+        if command.stdout(Stdio::inherit())
+                  .stderr(Stdio::inherit())
+                  .status().unwrap().code().unwrap() != 0
+        {
+            println!("Error while compiling spirv");
+            process::exit(1)
         }
     }
 }
@@ -243,5 +269,6 @@ fn main() {
 
     glsl_files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     write_shaders(glsl_files.clone(), &shaders_file);
-    create_shaders(glsl_files, out_dir);
+    let file_name_vector = create_shaders(glsl_files, out_dir.clone());
+    compile_spirv(file_name_vector, out_dir);
 }

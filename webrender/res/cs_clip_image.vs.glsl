@@ -13,7 +13,7 @@ ImageMaskData fetch_mask_data(int index) {
 }
 
 void main(void) {
-    CacheClipInstance cci = fetch_clip_item(gl_InstanceID);
+    CacheClipInstance cci = fetch_clip_item(gl_InstanceIndex);
     ClipArea area = fetch_clip_area(cci.render_task_index);
     Layer layer = fetch_layer(cci.layer_index);
     ImageMaskData mask = fetch_mask_data(cci.data_index);

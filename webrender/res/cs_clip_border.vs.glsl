@@ -51,7 +51,7 @@ BorderClipDot fetch_border_clip_dot(int index) {
 }
 
 void main(void) {
-    CacheClipInstance cci = fetch_clip_item(gl_InstanceID);
+    CacheClipInstance cci = fetch_clip_item(gl_InstanceIndex);
     ClipArea area = fetch_clip_area(cci.render_task_index);
     Layer layer = fetch_layer(cci.layer_index);
 

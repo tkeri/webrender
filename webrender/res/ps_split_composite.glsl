@@ -3,6 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-varying vec3 vUv;
-flat varying vec4 vUvTaskBounds;
-flat varying vec4 vUvSampleBounds;
+layout(location = 6) varying vec3 vUv;
+layout(location = 7) flat varying vec4 vUvTaskBounds;
+layout(location = 8) flat varying vec4 vUvSampleBounds;

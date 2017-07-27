@@ -4,25 +4,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Edge color transition
-flat varying vec4 vColor00;
-flat varying vec4 vColor01;
-flat varying vec4 vColor10;
-flat varying vec4 vColor11;
-flat varying vec4 vColorEdgeLine;
+layout(location = 6) flat varying vec4 vColor00;
+layout(location = 7) flat varying vec4 vColor01;
+layout(location = 8) flat varying vec4 vColor10;
+layout(location = 9) flat varying vec4 vColor11;
+layout(location = 10) flat varying vec4 vColorEdgeLine;
 
 // Border radius
-flat varying vec2 vClipCenter;
-flat varying vec4 vRadii0;
-flat varying vec4 vRadii1;
-flat varying vec2 vClipSign;
-flat varying vec4 vEdgeDistance;
-flat varying float vSDFSelect;
+layout(location = 11) flat varying vec2 vClipCenter;
+layout(location = 12) flat varying vec4 vRadii0;
+layout(location = 13) flat varying vec4 vRadii1;
+layout(location = 14) flat varying vec2 vClipSign;
+layout(location = 15) flat varying vec4 vEdgeDistance;
+layout(location = 16) flat varying float vSDFSelect;
 
 // Border style
-flat varying float vAlphaSelect;
+layout(location = 17) flat varying float vAlphaSelect;
 
 #ifdef WR_FEATURE_TRANSFORM
-varying vec3 vLocalPos;
+layout(location = 18) varying vec3 vLocalPos;
 #else
-varying vec2 vLocalPos;
+layout(location = 18) varying vec2 vLocalPos;
 #endif

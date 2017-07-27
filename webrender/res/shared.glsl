@@ -28,11 +28,15 @@
     #define varying out
 
     // Uniform inputs
-    uniform mat4 uTransform;       // Orthographic projection
-    uniform float uDevicePixelRatio;
+    //uniform mat4 uTransform;       // Orthographic projection
+    //uniform float uDevicePixelRatio;
+    layout(set = 0, binding = 0) uniform Locals {
+        uniform mat4 uTransform;       // Orthographic projection
+        uniform float uDevicePixelRatio;
+    };
 
     // Attribute inputs
-    in vec3 aPosition;
+    layout(location = 0) in vec3 aPosition;
 #endif
 
 //======================================================================================
@@ -46,7 +50,7 @@
     // Uniform inputs
 
     // Fragment shader outputs
-    out vec4 oFragColor;
+    layout(location = 0) out vec4 oFragColor;
 #endif
 
 //======================================================================================
