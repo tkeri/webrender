@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-layout(location = 0) in vec4 aColor;
-layout(location = 1) out vec4 vColor;
+LAYOUT(0, in vec4 aColor);
+LAYOUT(1, out vec4 vColor);
 
 void main(void)
 {

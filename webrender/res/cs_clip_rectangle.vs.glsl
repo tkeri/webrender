@@ -44,7 +44,7 @@ ClipData fetch_clip(int index) {
 }
 
 void main(void) {
-    CacheClipInstance cci = fetch_clip_item(gl_InstanceIndex);
+    CacheClipInstance cci = fetch_clip_item(gl_InstanceID);
     ClipArea area = fetch_clip_area(cci.render_task_index);
     Layer layer = fetch_layer(cci.layer_index);
     ClipData clip = fetch_clip(cci.data_index);

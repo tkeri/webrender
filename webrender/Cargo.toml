@@ -11,6 +11,7 @@ default = ["freetype-lib", "webgl"]
 freetype-lib = ["freetype/servo-freetype-sys"]
 profiler = ["thread_profiler/thread_profiler"]
 webgl = ["offscreen_gl_context", "webrender_api/webgl"]
+vulkan = []
 
 [dependencies]
 app_units = "0.5"

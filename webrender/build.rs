@@ -10,7 +10,7 @@ use std::fs::{canonicalize, read_dir, File};
 use std::process::{self, Command, Stdio};
 
 #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
-const SHADER_VERSION: &'static str = "#version 450\n";
+const SHADER_VERSION: &'static str = "#version 150\n";
 
 #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 const SHADER_VERSION: &'static str = "#version 300 es\n";
@@ -138,7 +138,6 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) -> Vec<String> {
             build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_NV12\n#define WR_FEATURE_YUV_REC709\n");
             build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_YUV_REC709\n");
             build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n#define WR_FEATURE_YUV_REC709\n");
-
         }
 
         for (iter, config_prefix) in build_configs.iter().enumerate() {
@@ -227,13 +226,14 @@ fn create_shaders(glsl_files: Vec<PathBuf>, out_dir: String) -> Vec<String> {
     return file_name_vector
 }
 
+#[cfg(feature = "vulkan")]
 fn compile_spirv(file_name_vector: Vec<String>, out_dir: String) {
     for mut file_name in file_name_vector {
         let file_path = Path::new(&out_dir).join(&file_name);
         file_name.push_str(".spv");
         let spirv_file_path = Path::new(&out_dir).join(&file_name);
 
-        let mut command = Command::new("glslangValidator");
+        let mut command = Command::new(Path::new("./tools/glslangValidator"));
         command.arg("-V");
         command.arg("-o");
         command.arg(&spirv_file_path);
@@ -270,5 +270,6 @@ fn main() {
     glsl_files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     write_shaders(glsl_files.clone(), &shaders_file);
     let file_name_vector = create_shaders(glsl_files, out_dir.clone());
+    #[cfg(feature = "vulkan")]
     compile_spirv(file_name_vector, out_dir);
 }

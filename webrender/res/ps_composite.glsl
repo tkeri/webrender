@@ -2,6 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-layout(location = 6) varying vec3 vUv0;
-layout(location = 7) varying vec3 vUv1;
-layout(location = 8) flat varying int vOp;
+LAYOUT(6, varying vec3 vUv0);
+LAYOUT(7, varying vec3 vUv1);
+LAYOUT(8, flat varying int vOp);

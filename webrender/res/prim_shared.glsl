@@ -105,10 +105,10 @@ float distance_to_line(vec2 p0, vec2 perp_dir, vec2 p) {
 }
 
 // TODO: convert back to RectWithEndPoint if driver issues are resolved, if ever.
-layout(location = 1) flat varying vec4 vClipMaskUvBounds;
-layout(location = 2) varying vec3 vClipMaskUv;
+LAYOUT(1, flat varying vec4 vClipMaskUvBounds);
+LAYOUT(2, varying vec3 vClipMaskUv);
 #ifdef WR_FEATURE_TRANSFORM
-    layout(location = 3) flat varying vec4 vLocalBounds;
+    LAYOUT(3, flat varying vec4 vLocalBounds);
 #endif
 
 // TODO(gw): This is here temporarily while we have
@@ -146,8 +146,8 @@ uniform HIGHP_SAMPLER_FLOAT sampler2D sLayers;
 uniform HIGHP_SAMPLER_FLOAT sampler2D sRenderTasks;
 
 // Instanced attributes
-layout(location = 4) in ivec4 aData0;
-layout(location = 5) in ivec4 aData1;
+LAYOUT(4, in ivec4 aData0);
+LAYOUT(5, in ivec4 aData1);
 
 // get_fetch_uv is a macro to work around a macOS Intel driver parsing bug.
 // TODO: convert back to a function once the driver issues are resolved, if ever.
@@ -681,7 +681,7 @@ TransformVertexInfo write_transform_vertex(RectWithSize instance_rect,
 
     // Select the current vertex and the previous/next vertices,
     // based on the vertex ID that is known based on the instance rect.
-    switch (gl_VertexIndex) {
+    switch (gl_VertexID) {
         case 0:
             current_local_pos = vec2(local_rect.p0.x, local_rect.p0.y);
             next_local_pos = vec2(local_rect.p0.x, local_rect.p1.y);

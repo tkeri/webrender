@@ -105,7 +105,13 @@ gfx_defines! {
         resource_address: i32 = "aClipResourceAddress",
     }
 
+    constant Locals {
+        transform: [[f32; 4]; 4] = "uTransform",
+        device_pixel_ratio: f32 = "uDevicePixelRatio",
+    }
+
     pipeline primitive {
+        locals: gfx::ConstantBuffer<Locals> = "Locals",
         transform: gfx::Global<[[f32; 4]; 4]> = "uTransform",
         device_pixel_ratio: gfx::Global<f32> = "uDevicePixelRatio",
         vbuf: gfx::VertexBuffer<Position> = (),
@@ -131,6 +137,7 @@ gfx_defines! {
     }
 
     pipeline cache {
+        locals: gfx::ConstantBuffer<Locals> = "Locals",
         transform: gfx::Global<[[f32; 4]; 4]> = "uTransform",
         device_pixel_ratio: gfx::Global<f32> = "uDevicePixelRatio",
         vbuf: gfx::VertexBuffer<Position> = (),
@@ -152,6 +159,7 @@ gfx_defines! {
     }
 
     pipeline blur {
+        locals: gfx::ConstantBuffer<Locals> = "Locals",
         transform: gfx::Global<[[f32; 4]; 4]> = "uTransform",
         device_pixel_ratio: gfx::Global<f32> = "uDevicePixelRatio",
         vbuf: gfx::VertexBuffer<Position> = (),
@@ -173,6 +181,7 @@ gfx_defines! {
     }
 
     pipeline clip {
+        locals: gfx::ConstantBuffer<Locals> = "Locals",
         transform: gfx::Global<[[f32; 4]; 4]> = "uTransform",
         device_pixel_ratio: gfx::Global<f32> = "uDevicePixelRatio",
         vbuf: gfx::VertexBuffer<Position> = (),
@@ -569,6 +578,7 @@ impl Device {
                                                    gfx::TRANSFER_DST).unwrap();
 
         let data = cache::Data {
+            locals: self.factory.create_constant_buffer(1),
             transform: [[0f32; 4]; 4],
             device_pixel_ratio: DEVICE_PIXEL_RATIO,
             vbuf: self.vertex_buffer.clone(),
@@ -601,6 +611,7 @@ impl Device {
                                                         gfx::TRANSFER_DST).unwrap();
 
         let data = blur::Data {
+            locals: self.factory.create_constant_buffer(1),
             transform: [[0f32; 4]; 4],
             device_pixel_ratio: DEVICE_PIXEL_RATIO,
             vbuf: self.vertex_buffer.clone(),
@@ -633,6 +644,7 @@ impl Device {
                                                          gfx::TRANSFER_DST).unwrap();
 
         let data = clip::Data {
+            locals: self.factory.create_constant_buffer(1),
             transform: [[0f32; 4]; 4],
             device_pixel_ratio: DEVICE_PIXEL_RATIO,
             vbuf: self.vertex_buffer.clone(),
@@ -667,6 +679,12 @@ impl Device {
             program.slice.instances = Some((instances.len() as u32, 0));
         }
 
+        let locals = Locals {
+            transform: program.data.transform,
+            device_pixel_ratio: program.data.device_pixel_ratio,
+        };
+
+        self.encoder.update_buffer(&program.data.locals, &[locals], 0).unwrap();
         self.encoder.copy_buffer(&program.upload.0, &program.data.ibuf, program.upload.1, 0, instances.len()).unwrap();
         self.encoder.draw(&program.slice, &program.get_pso(blendmode), &program.data);
     }
@@ -685,6 +703,12 @@ impl Device {
             program.slice.instances = Some((blur_commands.len() as u32, 0));
         }
 
+        let locals = Locals {
+            transform: program.data.transform,
+            device_pixel_ratio: program.data.device_pixel_ratio,
+        };
+
+        self.encoder.update_buffer(&program.data.locals, &[locals], 0).unwrap();
         self.encoder.copy_buffer(&program.upload.0, &program.data.ibuf, program.upload.1, 0, blur_commands.len()).unwrap();
         self.encoder.draw(&program.slice, &program.pso, &program.data);
     }
