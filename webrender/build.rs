@@ -232,8 +232,10 @@ fn compile_spirv(file_name_vector: Vec<String>, out_dir: String) {
         let file_path = Path::new(&out_dir).join(&file_name);
         file_name.push_str(".spv");
         let spirv_file_path = Path::new(&out_dir).join(&file_name);
-
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         let mut command = Command::new(Path::new("./tools/glslangValidator"));
+        #[cfg(target_os = "windows")]
+        let mut command = Command::new(Path::new("./tools/glslangValidator.exe"));
         command.arg("-V");
         command.arg("-o");
         command.arg(&spirv_file_path);
