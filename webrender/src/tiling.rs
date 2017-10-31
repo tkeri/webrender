@@ -10,7 +10,7 @@ use api::{LayerVector2D, TileOffset, WorldToLayerTransform, YuvColorSpace, YuvFo
 use border::{BorderCornerInstance, BorderCornerSide};
 use clip::{ClipSource, ClipStore};
 use clip_scroll_tree::CoordinateSystemId;
-use device::Texture;
+use device::TextureId;
 use glyph_rasterizer::GlyphFormat;
 use gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle, GpuCacheUpdateList};
 use gpu_types::{BlurDirection, BlurInstance, BrushInstance, ClipMaskInstance};
@@ -31,6 +31,9 @@ use std::{cmp, usize, f32, i32};
 use texture_allocator::GuillotineAllocator;
 use util::{MatrixHelpers, TransformedRect, TransformedRectKind};
 use euclid::rect;
+
+use gfx::memory::Pod;
+unsafe impl Pod for PackedLayer {}
 
 // Special sentinel value recognized by the shader. It is considered to be
 // a dummy task that doesn't mask out anything.
@@ -259,7 +262,8 @@ impl BatchList {
     ) -> &mut Vec<PrimitiveInstance> {
         match key.blend_mode {
             BlendMode::None => self.opaque_batch_list.get_suitable_batch(key),
-            BlendMode::Alpha | BlendMode::PremultipliedAlpha | BlendMode::Subpixel => {
+            //BlendMode::Alpha | BlendMode::PremultipliedAlpha | BlendMode::Subpixel => {
+            _ => {
                 self.alpha_batch_list
                     .get_suitable_batch(key, item_bounding_rect)
             }
@@ -1403,8 +1407,8 @@ pub struct RenderPass {
     tasks: Vec<RenderTaskId>,
     pub color_targets: RenderTargetList<ColorRenderTarget>,
     pub alpha_targets: RenderTargetList<AlphaRenderTarget>,
-    pub color_texture: Option<Texture>,
-    pub alpha_texture: Option<Texture>,
+    pub color_texture: Option<TextureId>,
+    pub alpha_texture: Option<TextureId>,
     dynamic_tasks: FastHashMap<RenderTaskKey, DynamicTaskInfo>,
     pub max_color_target_size: DeviceUintSize,
     pub max_alpha_target_size: DeviceUintSize,

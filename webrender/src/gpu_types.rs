@@ -10,7 +10,7 @@ use tiling::PackedLayerIndex;
 // Contains type that must exactly match the same structures declared in GLSL.
 
 #[derive(Debug, Copy, Clone)]
-pub struct PackedLayerAddress(i32);
+pub struct PackedLayerAddress(pub i32);
 
 impl From<PackedLayerIndex> for PackedLayerAddress {
     fn from(index: PackedLayerIndex) -> PackedLayerAddress {
@@ -25,7 +25,7 @@ pub enum BlurDirection {
     Vertical,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Debug, Clone)]
 #[repr(C)]
 pub struct BlurInstance {
     pub task_address: RenderTaskAddress,
@@ -50,7 +50,7 @@ pub struct ClipMaskInstance {
 // 32 bytes per instance should be enough for anyone!
 #[derive(Debug, Clone)]
 pub struct PrimitiveInstance {
-    data: [i32; 8],
+    pub data: [i32; 8],
 }
 
 pub struct SimplePrimitiveInstance {

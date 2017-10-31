@@ -17,6 +17,9 @@ use tiling::{RenderTargetKind, StackingContextIndex};
 
 const FLOATS_PER_RENDER_TASK_INFO: usize = 12;
 
+use gfx::memory::Pod;
+unsafe impl Pod for RenderTaskData {}
+
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RenderTaskId(pub u32); // TODO(gw): Make private when using GPU cache!
 

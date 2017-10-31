@@ -48,6 +48,21 @@ extern crate lazy_static;
 extern crate log;
 #[macro_use]
 extern crate thread_profiler;
+#[macro_use]
+extern crate gfx;
+
+#[cfg(all(target_os = "windows", feature="dx11"))]
+extern crate gfx_device_dx11 as backend;
+#[cfg(not(feature = "dx11"))]
+extern crate gfx_device_gl as backend;
+
+#[cfg(all(target_os = "windows", feature="dx11"))]
+extern crate gfx_window_dxgi as backend_window;
+#[cfg(not(feature = "dx11"))]
+extern crate glutin as backend_window;
+
+#[cfg(all(target_os = "windows", feature="dx11"))]
+extern crate winit;
 
 mod border;
 mod box_shadow;
@@ -71,6 +86,7 @@ mod gpu_cache;
 mod gpu_types;
 mod internal_types;
 mod picture;
+mod pipelines;
 mod prim_store;
 mod print_tree;
 mod profiler;
@@ -85,10 +101,7 @@ mod texture_allocator;
 mod texture_cache;
 mod tiling;
 mod util;
-
-mod shader_source {
-    include!(concat!(env!("OUT_DIR"), "/shaders.rs"));
-}
+mod window;
 
 pub use record::{ApiRecordingReceiver, BinaryRecorder, WEBRENDER_RECORDING_HEADER};
 
@@ -130,9 +143,10 @@ extern crate dwrote;
 extern crate app_units;
 extern crate bincode;
 extern crate byteorder;
+extern crate rand;
 extern crate euclid;
 extern crate fxhash;
-extern crate gleam;
+//extern crate gleam;
 extern crate num_traits;
 extern crate plane_split;
 extern crate rayon;
@@ -150,9 +164,14 @@ pub extern crate webrender_api;
 extern crate gamma_lut;
 
 #[doc(hidden)]
-pub use device::build_shader_strings;
+//pub use device::build_shader_strings;
 pub use renderer::{CpuProfile, DebugFlags, GpuProfile, OutputImageHandler, RendererKind};
 pub use renderer::{ExternalImage, ExternalImageHandler, ExternalImageSource};
 pub use renderer::{GraphicsApi, GraphicsApiInfo, ReadPixelsFormat, Renderer, RendererOptions};
 pub use renderer::MAX_VERTEX_TEXTURE_WIDTH;
 pub use webrender_api as api;
+pub use window::create_rgba8_window;
+#[cfg(target_os="linux")]
+pub use window::create_rgba8_headless;
+pub use backend_window::Window;
+pub use device::{BackendDevice, DeviceInitParams};
