@@ -137,14 +137,14 @@ impl<'a> PerfHarness<'a> {
         let mut profile = Profile::new();
 
         for t in manifest.benchmarks {
-            let stats = self.render_yaml(t.test.as_path());
-            profile.add(stats);
+            //let stats = self.render_yaml(t.test.as_path());
+            //profile.add(stats);
         }
 
         profile.save(filename);
     }
 
-    fn render_yaml(&mut self, filename: &Path) -> TestProfile {
+    /*fn render_yaml(&mut self, filename: &Path) -> TestProfile {
         let mut reader = YamlFrameReader::new(filename);
 
         // Loop until we get a reasonable number of CPU and GPU
@@ -159,9 +159,9 @@ impl<'a> PerfHarness<'a> {
             self.rx.recv().unwrap();
             self.wrench.render();
             self.window.swap_buffers();
-            let (cpu_profiles, gpu_profiles) = self.wrench.get_frame_profiles();
-            cpu_frame_profiles.extend(cpu_profiles);
-            gpu_frame_profiles.extend(gpu_profiles);
+            //let (cpu_profiles, gpu_profiles) = self.wrench.get_frame_profiles();
+            //cpu_frame_profiles.extend(cpu_profiles);
+            //gpu_frame_profiles.extend(gpu_profiles);
         }
 
         // Ensure the draw calls match in every sample.
@@ -183,7 +183,7 @@ impl<'a> PerfHarness<'a> {
             backend_time_ns,
             draw_calls,
         }
-    }
+    }*/
 }
 
 fn extract_sample<F, T>(profiles: &mut [T], f: F) -> u64

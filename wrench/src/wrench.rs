@@ -127,7 +127,7 @@ pub struct Wrench {
 
     window_title_to_set: Option<String>,
 
-    graphics_api: webrender::GraphicsApiInfo,
+    //graphics_api: webrender::GraphicsApiInfo,
 
     pub rebuild_display_lists: bool,
     pub verbose: bool,
@@ -142,6 +142,7 @@ impl Wrench {
         dp_ratio: f32,
         save_type: Option<SaveType>,
         size: DeviceUintSize,
+        mut device_init_params: webrender::DeviceInitParams,
         do_rebuild: bool,
         no_subpixel_aa: bool,
         debug: bool,
@@ -191,11 +192,11 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
-        let (renderer, sender) = webrender::Renderer::new(window.clone_gl(), notifier, opts).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(notifier, opts, device_init_params).unwrap();
         let api = sender.create_api();
         let document_id = api.add_document(size);
 
-        let graphics_api = renderer.get_graphics_api_info();
+        //let graphics_api = renderer.get_graphics_api_info();
 
         let mut wrench = Wrench {
             window_size: size,
@@ -211,7 +212,7 @@ impl Wrench {
 
             root_pipeline_id: PipelineId(0, 0),
 
-            graphics_api,
+            //graphics_api,
             frame_start_sender: timing_sender,
         };
 
@@ -291,11 +292,11 @@ impl Wrench {
 
     pub fn set_title(&mut self, extra: &str) {
         self.window_title_to_set = Some(format!(
-            "Wrench: {} ({}x) - {} - {}",
+            "Wrench: {} ({}x)",
             extra,
             self.device_pixel_ratio,
-            self.graphics_api.renderer,
-            self.graphics_api.version
+            //self.graphics_api.renderer,
+            //self.graphics_api.version,
         ));
     }
 
@@ -454,11 +455,11 @@ impl Wrench {
         self.api.generate_frame(self.document_id, None);
     }
 
-    pub fn get_frame_profiles(
+    /*pub fn get_frame_profiles(
         &mut self,
     ) -> (Vec<webrender::CpuProfile>, Vec<webrender::GpuProfile>) {
         self.renderer.get_frame_profiles()
-    }
+    }*/
 
     pub fn render(&mut self) {
         self.renderer.update();
@@ -483,15 +484,15 @@ impl Wrench {
         ];
 
         let color_and_offset = [(*BLACK_COLOR, 2.0), (*WHITE_COLOR, 0.0)];
-        let dr = self.renderer.debug_renderer();
+        //let dr = self.renderer.debug_renderer();
 
-        for ref co in &color_and_offset {
+        /*for ref co in &color_and_offset {
             let x = self.device_pixel_ratio * (15.0 + co.1);
             let mut y = self.device_pixel_ratio * (15.0 + co.1 + dr.line_height());
             for ref line in &help_lines {
                 dr.add_text(x, y, line, co.0.into());
                 y += self.device_pixel_ratio * dr.line_height();
             }
-        }
+        }*/
     }
 }

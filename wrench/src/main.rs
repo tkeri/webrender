@@ -163,7 +163,7 @@ impl HeadlessContext {
 }
 
 pub enum WindowWrapper {
-    Window(glutin::Window, Rc<gl::Gl>),
+    Window(Rc<glutin::Window>, Rc<gl::Gl>),
     Headless(HeadlessContext, Rc<gl::Gl>),
 }
 
@@ -216,6 +216,15 @@ impl WindowWrapper {
             WindowWrapper::Window(_, ref gl) | WindowWrapper::Headless(_, ref gl) => gl.clone(),
         }
     }
+
+    fn get_window(&self) -> Rc<glutin::Window> {
+        match *self {
+            WindowWrapper::Window(ref window, _) => window.clone(),
+            WindowWrapper::Headless(_, _) => {
+                unreachable!()
+            }
+        }
+    }
 }
 
 fn make_window(
@@ -223,8 +232,9 @@ fn make_window(
     dp_ratio: Option<f32>,
     vsync: bool,
     headless: bool,
-) -> WindowWrapper {
-    let wrapper = if headless {
+) -> (WindowWrapper, webrender::DeviceInitParams) {
+    let (wrapper, params) = if headless {
+        let headles_ctx = HeadlessContext::new(size.width, size.height);
         let gl = match gl::GlType::default() {
             gl::GlType::Gl => unsafe {
                 gl::GlFns::load_with(|symbol| {
@@ -237,7 +247,14 @@ fn make_window(
                 })
             },
         };
-        WindowWrapper::Headless(HeadlessContext::new(size.width, size.height), gl)
+        let params = webrender::create_rgba8_headless(
+            HeadlessContext::get_proc_address,
+            size.width,
+            size.height,
+        );
+        let wrapper = WindowWrapper::Headless(headles_ctx, gl);
+
+        (wrapper, params)
     } else {
         let mut window = glutin::WindowBuilder::new()
             .with_gl(glutin::GlRequest::GlThenGles {
@@ -260,10 +277,11 @@ fn make_window(
                 gl::GlesFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
             },
         };
-        WindowWrapper::Window(window, gl)
+        let (win, params) = webrender::create_rgba8_window(window);
+        (WindowWrapper::Window(Rc::new(win), gl), params)
     };
 
-    wrapper.gl().clear_color(0.3, 0.0, 0.0, 1.0);
+    /*wrapper.gl().clear_color(0.3, 0.0, 0.0, 1.0);
 
     let gl_version = wrapper.gl().get_string(gl::VERSION);
     let gl_renderer = wrapper.gl().get_string(gl::RENDERER);
@@ -274,9 +292,9 @@ fn make_window(
         "hidpi factor: {} (native {})",
         dp_ratio,
         wrapper.hidpi_factor()
-    );
+    );*/
 
-    wrapper
+    (wrapper, params)
 }
 
 struct Notifier {
@@ -341,7 +359,7 @@ fn main() {
         .unwrap_or(DeviceUintSize::new(1920, 1080));
     let is_headless = args.is_present("headless");
 
-    let mut window = make_window(size, dp_ratio, args.is_present("vsync"), is_headless);
+    let (mut window, mut params) = make_window(size, dp_ratio, args.is_present("vsync"), is_headless);
     let dp_ratio = dp_ratio.unwrap_or(window.hidpi_factor());
     let (width, height) = window.get_inner_size_pixels();
     let dim = DeviceUintSize::new(width, height);
@@ -362,6 +380,7 @@ fn main() {
         dp_ratio,
         save_type,
         dim,
+        params,
         args.is_present("rebuild"),
         args.is_present("no_subpixel_aa"),
         args.is_present("debug"),
