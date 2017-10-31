@@ -8,6 +8,7 @@ use gleam::gl;
 use glutin;
 use std::env;
 use std::path::PathBuf;
+use std::rc::Rc;
 use webrender;
 use webrender::api::*;
 
@@ -94,45 +95,47 @@ pub fn main_wrapper(example: &mut Example, options: Option<webrender::RendererOp
         None
     };
 
-    let window = glutin::WindowBuilder::new()
-        .with_title("WebRender Sample App")
+    let glutin_window = glutin::WindowBuilder::new()
+        .with_title("WebRender Sample")
         .with_multitouch()
         .with_gl(glutin::GlRequest::GlThenGles {
             opengl_version: (3, 2),
-            opengles_version: (3, 0),
+            opengles_version: (3, 0)
         })
         .build()
         .unwrap();
 
     unsafe {
-        window.make_current().ok();
+        glutin_window.make_current().ok();
     }
 
     let gl = match gl::GlType::default() {
         gl::GlType::Gl => unsafe {
-            gl::GlFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
+            gl::GlFns::load_with(|symbol| glutin_window.get_proc_address(symbol) as *const _)
         },
         gl::GlType::Gles => unsafe {
-            gl::GlesFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
+            gl::GlesFns::load_with(|symbol| glutin_window.get_proc_address(symbol) as *const _)
         },
     };
 
     println!("OpenGL version {}", gl.get_string(gl::VERSION));
     println!("Shader resource path: {:?}", res_path);
 
-    let (width, height) = window.get_inner_size_pixels().unwrap();
+    let (width, height) = glutin_window.get_inner_size_pixels().unwrap();
 
     let opts = webrender::RendererOptions {
         resource_override_path: res_path,
         debug: true,
         precache_shaders: true,
-        device_pixel_ratio: window.hidpi_factor(),
-        ..options.unwrap_or(webrender::RendererOptions::default())
+        device_pixel_ratio: glutin_window.hidpi_factor(),
+        enable_dithering: true,
+        .. options.unwrap_or(webrender::RendererOptions::default())
     };
 
+    let (window, mut device_init_params) = webrender::create_rgba8_window(glutin_window);
     let size = DeviceUintSize::new(width, height);
     let notifier = Box::new(Notifier::new(window.create_window_proxy()));
-    let (mut renderer, sender) = webrender::Renderer::new(gl.clone(), notifier, opts).unwrap();
+    let (mut renderer, sender) = webrender::Renderer::new(notifier, opts, device_init_params).unwrap();
     let api = sender.create_api();
     let document_id = api.add_document(size);
 
