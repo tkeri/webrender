@@ -29,13 +29,13 @@ struct BrushInstance {
 BrushInstance load_brush() {
 	BrushInstance bi;
 
-    bi.picture_address = aData0.x;
-    bi.prim_address = aData0.y;
-    bi.layer_address = aData0.z;
-    bi.clip_address = aData0.w;
-    bi.z = aData1.x;
-    bi.flags = aData1.y;
-    bi.user_data = aData1.zw;
+    bi.picture_address = aDataA.x;
+    bi.prim_address = aDataA.y;
+    bi.layer_address = aDataA.z;
+    bi.clip_address = aDataA.w;
+    bi.z = aDataB.x;
+    bi.flags = aDataB.y;
+    bi.user_data = aDataB.zw;
 
     return bi;
 }
@@ -122,6 +122,6 @@ void main(void) {
 #endif
 
     // TODO(gw): Handle pre-multiply common code here as required.
-    oFragColor = color;
+    Target0 = color;
 }
 #endif

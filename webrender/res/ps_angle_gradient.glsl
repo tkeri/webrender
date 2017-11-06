@@ -63,6 +63,6 @@ void main(void) {
                                  offset,
                                  vGradientRepeat);
 
-    oFragColor = color * do_clip();
+    Target0 = color * do_clip();
 }
 #endif

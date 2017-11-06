@@ -91,7 +91,7 @@ void main(void) {
     //           is zero. In the future, detect this earlier
     //           and skip the blur passes completely.
     if (vBlurRadius == 0) {
-        oFragColor = vec4(original_color);
+        Target0 = vec4(original_color);
         return;
     }
 
@@ -119,6 +119,6 @@ void main(void) {
         gauss_coefficient.xy *= gauss_coefficient.yz;
     }
 
-    oFragColor = vec4(avg_color) / gauss_coefficient_sum;
+    Target0 = vec4(avg_color) / gauss_coefficient_sum;
 }
 #endif

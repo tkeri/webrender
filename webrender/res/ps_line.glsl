@@ -264,6 +264,6 @@ void main(void) {
         }
     }
 
-    oFragColor = vColor * vec4(1.0, 1.0, 1.0, alpha);
+    Target0 = vColor * vec4(1.0, 1.0, 1.0, alpha);
 }
 #endif

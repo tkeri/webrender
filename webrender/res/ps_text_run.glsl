@@ -90,6 +90,6 @@ void main(void) {
 #endif
     alpha *= do_clip();
 
-    oFragColor = color * vColor * alpha;
+    Target0 = color * vColor * alpha;
 }
 #endif

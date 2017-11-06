@@ -108,6 +108,6 @@ void main(void) {
 #endif
 
     alpha *= do_clip();
-    oFragColor = dither(vColor * alpha);
+    Target0 = dither(vColor * alpha);
 }
 #endif

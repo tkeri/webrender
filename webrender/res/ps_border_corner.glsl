@@ -399,6 +399,6 @@ void main(void) {
     float m = distance_aa(aa_range, -ld);
     vec4 color = mix(color0, color1, m);
 
-    oFragColor = color * alpha;
+    Target0 = color * alpha;
 }
 #endif

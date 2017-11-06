@@ -19,6 +19,6 @@ void main(void) {
 
 #ifdef WR_FRAGMENT_SHADER
 void main(void) {
-    oFragColor = vColor;
+    Target0 = vColor;
 }
 #endif

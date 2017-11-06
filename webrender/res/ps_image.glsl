@@ -115,6 +115,6 @@ void main(void) {
 
     alpha = alpha * float(all(bvec2(step(position_in_tile, vStretchSize))));
 
-    oFragColor = vec4(alpha) * TEX_SAMPLE(sColor0, vec3(st, vLayer));
+    Target0 = vec4(alpha) * TEX_SAMPLE(sColor0, vec3(st, vLayer));
 }
 #endif

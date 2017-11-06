@@ -82,8 +82,8 @@ uniform HIGHP_SAMPLER_FLOAT sampler2D sLayers;
 uniform HIGHP_SAMPLER_FLOAT sampler2D sRenderTasks;
 
 // Instanced attributes
-in ivec4 aData0;
-in ivec4 aData1;
+in ivec4 aDataA;
+in ivec4 aDataB;
 
 // get_fetch_uv is a macro to work around a macOS Intel driver parsing bug.
 // TODO: convert back to a function once the driver issues are resolved, if ever.
@@ -361,15 +361,15 @@ struct PrimitiveInstance {
 PrimitiveInstance fetch_prim_instance() {
     PrimitiveInstance pi;
 
-    pi.prim_address = aData0.x;
+    pi.prim_address = aDataA.x;
     pi.specific_prim_address = pi.prim_address + VECS_PER_PRIM_HEADER;
-    pi.render_task_index = aData0.y;
-    pi.clip_task_index = aData0.z;
-    pi.layer_index = aData0.w;
-    pi.z = aData1.x;
-    pi.user_data0 = aData1.y;
-    pi.user_data1 = aData1.z;
-    pi.user_data2 = aData1.w;
+    pi.render_task_index = aDataA.y;
+    pi.clip_task_index = aDataA.z;
+    pi.layer_index = aDataA.w;
+    pi.z = aDataB.x;
+    pi.user_data0 = aDataB.y;
+    pi.user_data1 = aDataB.z;
+    pi.user_data2 = aDataB.w;
 
     return pi;
 }
@@ -386,13 +386,13 @@ struct CompositeInstance {
 CompositeInstance fetch_composite_instance() {
     CompositeInstance ci;
 
-    ci.render_task_index = aData0.x;
-    ci.src_task_index = aData0.y;
-    ci.backdrop_task_index = aData0.z;
-    ci.z = float(aData0.w);
+    ci.render_task_index = aDataA.x;
+    ci.src_task_index = aDataA.y;
+    ci.backdrop_task_index = aDataA.z;
+    ci.z = float(aDataA.w);
 
-    ci.user_data0 = aData1.x;
-    ci.user_data1 = aData1.y;
+    ci.user_data0 = aDataB.x;
+    ci.user_data1 = aDataB.y;
 
     return ci;
 }

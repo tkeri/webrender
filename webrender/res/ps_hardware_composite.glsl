@@ -34,6 +34,6 @@ void main(void) {
 #ifdef WR_FRAGMENT_SHADER
 void main(void) {
     vec2 uv = clamp(vUv.xy, vUvBounds.xy, vUvBounds.zw);
-    oFragColor = texture(sCacheRGBA8, vec3(uv, vUv.z));
+    Target0 = texture(sCacheRGBA8, vec3(uv, vUv.z));
 }
 #endif

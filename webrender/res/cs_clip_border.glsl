@@ -172,6 +172,6 @@ void main(void) {
     // Completely mask out clip if zero'ing out the rect.
     d = d * vAlphaMask.y;
 
-    oFragColor = vec4(d, 0.0, 0.0, 1.0);
+    Target0 = vec4(d, 0.0, 0.0, 1.0);
 }
 #endif

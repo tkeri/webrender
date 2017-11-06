@@ -46,7 +46,7 @@
     // Uniform inputs
 
     // Fragment shader outputs
-    out vec4 oFragColor;
+    out vec4 Target0;
 #endif
 
 //======================================================================================

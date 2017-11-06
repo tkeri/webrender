@@ -49,6 +49,6 @@ void main(void) {
 #ifdef WR_FEATURE_CLIP
     alpha *= do_clip();
 #endif
-    oFragColor = vColor * alpha;
+    Target0 = vColor * alpha;
 }
 #endif
