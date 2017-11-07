@@ -43,24 +43,28 @@ const PREM_ALPHA: Blend = Blend {
     },
 };
 
-// TODO: Rework Subpixel according to this
-//
-// pub fn set_blend_mode_subpixel_pass0(&self) {
-//     self.gl.blend_func(gl::ZERO, gl::ONE_MINUS_SRC_COLOR);
-// }
-// pub fn set_blend_mode_subpixel_pass1(&self) {
-//     self.gl.blend_func(gl::ONE, gl::ONE);
-// }
-
-const SUBPIXEL: Blend = Blend {
+const SUBPIXEL_PASS0: Blend = Blend {
     color: BlendChannel {
         equation: Equation::Add,
-        source: Factor::ZeroPlus(BlendValue::ConstColor),
+        source: Factor::One,
+        destination: Factor::One,
+    },
+    alpha: BlendChannel {
+        equation: Equation::Add,
+        source: Factor::One,
+        destination: Factor::One,
+    },
+};
+
+const SUBPIXEL_PASS1: Blend = Blend {
+    color: BlendChannel {
+        equation: Equation::Add,
+        source: Factor::Zero,
         destination: Factor::OneMinus(BlendValue::SourceColor),
     },
     alpha: BlendChannel {
         equation: Equation::Add,
-        source: Factor::ZeroPlus(BlendValue::ConstColor),
+        source: Factor::Zero,
         destination: Factor::OneMinus(BlendValue::SourceColor),
     },
 };
@@ -350,14 +354,13 @@ pub struct Program {
     pub pso: (PrimPSO, PrimPSO),
     pub pso_alpha: (PrimPSO, PrimPSO),
     pub pso_prem_alpha: (PrimPSO, PrimPSO),
-    pub pso_subpixel: (PrimPSO, PrimPSO),
     pub slice: gfx::Slice<R>,
     pub upload: (gfx::handle::Buffer<R, PrimitiveInstances>, usize),
 }
 
 impl Program {
     pub fn new(data: primitive::Data<R>,
-           psos: (PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO),
+           psos: (PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO),
            slice: gfx::Slice<R>,
            upload: gfx::handle::Buffer<R, PrimitiveInstances>)
            -> Program {
@@ -366,7 +369,6 @@ impl Program {
             pso: (psos.0, psos.1),
             pso_alpha: (psos.2, psos.3),
             pso_prem_alpha: (psos.4, psos.5),
-            pso_subpixel: (psos.6, psos.7),
             slice: slice,
             upload: (upload, 0),
         }
@@ -376,7 +378,6 @@ impl Program {
         match *blend {
             BlendMode::Alpha => if depth_write { &self.pso_alpha.0 } else { &self.pso_alpha.1 },
             BlendMode::PremultipliedAlpha => if depth_write { &self.pso_prem_alpha.0 } else { &self.pso_prem_alpha.1 },
-            BlendMode::Subpixel => if depth_write { &self.pso_subpixel.0 } else { &self.pso_subpixel.1 },
             _ => if depth_write { &self.pso.0 } else { &self.pso.1 },
         }
     }
@@ -417,12 +418,6 @@ impl Program {
         self.upload.1 += instances.len();
 
         println!("bind={:?}", device.bound_textures);
-        /*self.data.color0.0 = device.image_textures.get(&device.bound_textures.color0).unwrap().srv.clone();
-        self.data.color1.0 = device.image_textures.get(&device.bound_textures.color1).unwrap().srv.clone();
-        self.data.color2.0 = device.image_textures.get(&device.bound_textures.color2).unwrap().srv.clone();
-        self.data.cache_a8.0 = device.cache_a8_textures.get(&device.bound_textures.cache_a8).unwrap().srv.clone();
-        self.data.cache_rgba8.0 = device.cache_rgba8_textures.get(&device.bound_textures.cache_rgba8).unwrap().srv.clone();
-        self.data.shared_cache_a8.0 = device.cache_a8_textures.get(&device.bound_textures.shared_cache_a8).unwrap().srv.clone();*/
         self.data.color0 = device.get_texture_srv_and_sampler(TextureSampler::Color0);
         self.data.color1 = device.get_texture_srv_and_sampler(TextureSampler::Color1);
         self.data.color2 = device.get_texture_srv_and_sampler(TextureSampler::Color2);
@@ -442,11 +437,106 @@ impl Program {
 
     pub fn draw(&mut self, device: &mut Device, blendmode: &BlendMode, enable_depth_write: bool)
     {
-        // TODO subpixel mode for ps_text_run
-        /*if let &BlendMode::Subpixel(ref color) = blendmode {
-            self.data.blend_value = [color.r, color.g, color.b, color.a];
-        }*/
         device.encoder.draw(&self.slice, &self.get_pso(blendmode, enable_depth_write), &self.data);
+    }
+}
+
+#[derive(Debug)]
+pub struct TextProgram {
+    pub data: primitive::Data<R>,
+    // Depth write is always disabled for the text drawing pass,
+    // so we don't need duplicate the PSO-s here
+    pub pso_prem_alpha: PrimPSO,
+    pub pso_subpixel_pass0: PrimPSO,
+    pub pso_subpixel_pass1: PrimPSO,
+    pub slice: gfx::Slice<R>,
+    pub upload: (gfx::handle::Buffer<R, PrimitiveInstances>, usize),
+}
+
+impl TextProgram {
+    pub fn new(data: primitive::Data<R>,
+           psos: (PrimPSO, PrimPSO, PrimPSO),
+           slice: gfx::Slice<R>,
+           upload: gfx::handle::Buffer<R, PrimitiveInstances>)
+           -> TextProgram {
+        TextProgram {
+            data: data,
+            pso_prem_alpha: psos.0,
+            pso_subpixel_pass0: psos.1,
+            pso_subpixel_pass1: psos.2,
+            slice: slice,
+            upload: (upload, 0),
+        }
+    }
+
+    pub fn get_pso(&self, blend: &BlendMode, pass_number: Option<i32>) -> &PrimPSO {
+        match *blend {
+            BlendMode::PremultipliedAlpha => &self.pso_prem_alpha,
+            BlendMode::Subpixel => match pass_number {
+                Some(0) => &self.pso_subpixel_pass0,
+                Some(1) => &self.pso_subpixel_pass1,
+                _ => unreachable!(),
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn reset_upload_offset(&mut self) {
+        self.upload.1 = 0;
+    }
+
+    pub fn bind(
+        &mut self,
+        device: &mut Device,
+        projection: &Transform3D<f32>,
+        instances: &[PrimitiveInstance],
+        render_target: Option<(&TextureId, i32)>,
+        renderer_errors: &mut Vec<RendererError>,
+        mode: i32,
+    ) {
+        self.data.transform = projection.to_row_arrays();
+        self.data.mode = mode;
+        let locals = Locals {
+            transform: self.data.transform,
+            device_pixel_ratio: self.data.device_pixel_ratio,
+            mode: self.data.mode,
+        };
+        device.encoder.update_buffer(&self.data.locals, &[locals], 0).unwrap();
+
+        {
+            let mut writer = device.factory.write_mapping(&self.upload.0).unwrap();
+            for (i, inst) in instances.iter().enumerate() {
+                writer[i + self.upload.1].update(inst);
+            }
+        }
+
+        {
+            self.slice.instances = Some((instances.len() as u32, 0));
+        }
+        device.encoder.copy_buffer(&self.upload.0, &self.data.ibuf, self.upload.1, 0, instances.len()).unwrap();
+        self.upload.1 += instances.len();
+
+        println!("bind={:?}", device.bound_textures);
+        self.data.color0 = device.get_texture_srv_and_sampler(TextureSampler::Color0);
+        self.data.color1 = device.get_texture_srv_and_sampler(TextureSampler::Color1);
+        self.data.color2 = device.get_texture_srv_and_sampler(TextureSampler::Color2);
+        self.data.cache_a8.0 = device.get_texture_srv_and_sampler(TextureSampler::CacheA8).0;
+        self.data.cache_rgba8.0 = device.get_texture_srv_and_sampler(TextureSampler::CacheRGBA8).0;
+        self.data.shared_cache_a8.0 = device.get_texture_srv_and_sampler(TextureSampler::SharedCacheA8).0;
+
+        if render_target.is_some() {
+            let tex = device.cache_rgba8_textures.get(&render_target.unwrap().0).unwrap();
+            self.data.out_color = tex.rtv.raw().clone();
+            self.data.out_depth = tex.dsv.clone();
+        } else {
+            self.data.out_color = device.main_color.raw().clone();
+            self.data.out_depth = device.main_depth.clone();
+        }
+    }
+
+    pub fn draw(&mut self, device: &mut Device, blendmode: &BlendMode, pass_number: Option<i32>)
+    {
+        device.encoder.draw(&self.slice, &self.get_pso(blendmode, pass_number), &self.data);
     }
 }
 
@@ -699,7 +789,7 @@ impl DebugFontProgram {
 }
 
 impl Device {
-    pub fn create_prim_psos(&mut self, vert_src: &[u8],frag_src: &[u8]) -> (PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO) {
+    pub fn create_prim_psos(&mut self, vert_src: &[u8],frag_src: &[u8]) -> (PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO, PrimPSO) {
         let pso_depth_write = self.factory.create_pipeline_simple(
             vert_src,
             frag_src,
@@ -765,33 +855,51 @@ impl Device {
             }
         ).unwrap();
 
-        let pso_subpixel_depth_write = self.factory.create_pipeline_simple(
+
+        (pso_depth_write, pso, pso_alpha_depth_write, pso_alpha, pso_prem_alpha_depth_write, pso_prem_alpha)
+    }
+
+    pub fn create_text_psos(&mut self, vert_src: &[u8],frag_src: &[u8]) -> (PrimPSO, PrimPSO, PrimPSO) {
+        let pso_prem_alpha = self.factory.create_pipeline_simple(
             vert_src,
             frag_src,
             primitive::Init {
                 out_color: ("Target0",
                             Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Srgb),
                             gfx::state::MASK_ALL,
-                            Some(SUBPIXEL)),
+                            Some(PREM_ALPHA)),
+            out_depth: gfx::preset::depth::LESS_EQUAL_TEST,
                 .. primitive::new()
             }
         ).unwrap();
 
-        let pso_subpixel = self.factory.create_pipeline_simple(
+        let pso_subpixel_pass0 = self.factory.create_pipeline_simple(
             vert_src,
             frag_src,
             primitive::Init {
                 out_color: ("Target0",
                             Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Srgb),
                             gfx::state::MASK_ALL,
-                            Some(SUBPIXEL)),
+                            Some(SUBPIXEL_PASS0)),
                 out_depth: gfx::preset::depth::LESS_EQUAL_TEST,
                 .. primitive::new()
             }
         ).unwrap();
 
-        (pso_depth_write, pso, pso_alpha_depth_write, pso_alpha, pso_prem_alpha_depth_write,
-         pso_prem_alpha, pso_subpixel_depth_write, pso_subpixel)
+        let pso_subpixel_pass1 = self.factory.create_pipeline_simple(
+            vert_src,
+            frag_src,
+            primitive::Init {
+                out_color: ("Target0",
+                            Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Srgb),
+                            gfx::state::MASK_ALL,
+                            Some(SUBPIXEL_PASS1)),
+                out_depth: gfx::preset::depth::LESS_EQUAL_TEST,
+                .. primitive::new()
+            }
+        ).unwrap();
+
+        (pso_prem_alpha, pso_subpixel_pass0, pso_subpixel_pass1)
     }
 
     pub fn create_clip_psos(&mut self, vert_src: &[u8],frag_src: &[u8]) -> (ClipPSO, ClipPSO, ClipPSO) {
@@ -860,6 +968,45 @@ impl Device {
         };
         let psos = self.create_prim_psos(vert_src, frag_src);
         Program::new(data, psos, self.slice.clone(), upload)
+    }
+
+    pub fn create_text_program(&mut self, vert_src: &[u8], frag_src: &[u8]) -> TextProgram {
+        let upload = self.factory.create_upload_buffer(MAX_INSTANCE_COUNT).unwrap();
+        {
+            let mut writer = self.factory.write_mapping(&upload).unwrap();
+            for i in 0..MAX_INSTANCE_COUNT {
+                writer[i] = PrimitiveInstances::new();
+            }
+        }
+
+        let instances = self.factory.create_buffer(MAX_INSTANCE_COUNT,
+                                                   gfx::buffer::Role::Vertex,
+                                                   gfx::memory::Usage::Data,
+                                                   gfx::TRANSFER_DST).unwrap();
+
+        let data = primitive::Data {
+            locals: self.factory.create_constant_buffer(1),
+            transform: [[0f32; 4]; 4],
+            device_pixel_ratio: DEVICE_PIXEL_RATIO,
+            mode: 0,
+            vbuf: self.vertex_buffer.clone(),
+            ibuf: instances,
+            color0: (self.dummy_image().srv.clone(), self.sampler.0.clone()),
+            color1: (self.dummy_image().srv.clone(), self.sampler.0.clone()),
+            color2: (self.dummy_image().srv.clone(), self.sampler.0.clone()),
+            cache_a8: (self.dummy_cache_a8().srv.clone(), self.sampler.0.clone()),
+            cache_rgba8: (self.dummy_cache_rgba8().srv.clone(), self.sampler.1.clone()),
+            shared_cache_a8: (self.dummy_cache_a8().srv.clone(), self.sampler.0.clone()),
+            resource_cache: (self.resource_cache.srv.clone(), self.sampler.0.clone()),
+            layers: (self.layers.srv.clone(), self.sampler.0.clone()),
+            render_tasks: (self.render_tasks.srv.clone(), self.sampler.0.clone()),
+            dither: (self.dither().srv.clone(), self.sampler.0.clone()),
+            out_color: self.main_color.raw().clone(),
+            out_depth: self.main_depth.clone(),
+            blend_value: [0.0, 0.0, 0.0, 0.0]
+        };
+        let psos = self.create_text_psos(vert_src, frag_src);
+        TextProgram::new(data, psos, self.slice.clone(), upload)
     }
 
     pub fn create_blur_program(&mut self, vert_src: &[u8], frag_src: &[u8]) -> BlurProgram {

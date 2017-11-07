@@ -36,7 +36,7 @@ use gpu_types::PrimitiveInstance;
 use internal_types::{BatchTextures, SourceTexture, ORTHO_FAR_PLANE, ORTHO_NEAR_PLANE};
 use internal_types::{CacheTextureId, FastHashMap, RendererFrame, ResultMsg, TextureUpdateOp};
 use internal_types::{DebugOutput, RenderTargetMode, TextureUpdateList, TextureUpdateSource};
-use pipelines::{BlurProgram, ClipProgram, DebugColorProgram, DebugFontProgram, Program};
+use pipelines::{BlurProgram, ClipProgram, DebugColorProgram, DebugFontProgram, Program, TextProgram};
 use profiler::{BackendProfileCounters, Profiler};
 use profiler::{GpuProfileTag, RendererProfileCounters, RendererProfileTimers};
 use rayon::Configuration as ThreadPoolConfig;
@@ -879,6 +879,37 @@ impl ProgramPair {
     }
 }
 
+struct TextProgramPair((Box<TextProgram>, Box<TextProgram>));
+
+impl TextProgramPair {
+    fn get(&mut self, transform_kind: TransformedRectKind) -> &mut Box<TextProgram> {
+        match transform_kind {
+            TransformedRectKind::AxisAligned => &mut (self.0).0,
+            TransformedRectKind::Complex => &mut (self.0).1,
+        }
+    }
+
+    pub fn reset_upload_offset(&mut self) {
+        (self.0).0.reset_upload_offset();
+        (self.0).1.reset_upload_offset();
+    }
+
+    pub fn bind(
+        &mut self,
+        device: &mut Device,
+        transform_kind: TransformedRectKind,
+        projection: &Transform3D<f32>,
+        instances: &[PrimitiveInstance],
+        render_target: Option<(&TextureId, i32)>,
+        renderer_errors: &mut Vec<RendererError>,
+        mode: i32,
+    ) {
+        self.get(transform_kind).bind(device, projection, instances, render_target, renderer_errors, mode);
+    }
+}
+
+
+
 fn create_programs(device: &mut Device, filename: &str) -> ProgramPair {
     let program = create_program(device, filename);
     filename.to_owned().push_str("_transform");
@@ -897,6 +928,26 @@ fn create_program(device: &mut Device, filename: &str) -> Box<Program> {
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     Box::new(device.create_program(vs.as_slice(), ps.as_slice()))
+}
+
+fn create_text_programs(device: &mut Device, filename: &str) -> TextProgramPair {
+    let program = create_text_program(device, filename);
+    filename.to_owned().push_str("_transform");
+    TextProgramPair((program, create_text_program(device, filename)))
+}
+
+#[cfg(not(feature = "dx11"))]
+fn create_text_program(device: &mut Device, filename: &str) -> Box<TextProgram> {
+    let vs = get_shader_source(filename, ".vert");
+    let ps = get_shader_source(filename, ".frag");
+    Box::new(device.create_text_program(vs.as_slice(), ps.as_slice()))
+}
+
+#[cfg(all(target_os = "windows", feature="dx11"))]
+fn create_text_program(device: &mut Device, filename: &str) -> Box<TextProgram> {
+    let vs = get_shader_source(filename, ".vert.fx");
+    let ps = get_shader_source(filename, ".frag.fx");
+    Box::new(device.create_text_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(not(feature = "dx11"))]
@@ -1035,7 +1086,7 @@ pub struct Renderer {
     // a cache shader (e.g. blur) to the screen.
     ps_rectangle: ProgramPair,
     ps_rectangle_clip: ProgramPair,
-    ps_text_run: ProgramPair,
+    ps_text_run: TextProgramPair,
     ps_image: ProgramPair,
     ps_yuv_image: Vec<ProgramPair>,
     ps_border_corner: ProgramPair,
@@ -1173,7 +1224,7 @@ impl Renderer {
 
         let ps_rectangle = create_programs(&mut device, "ps_rectangle");
         let ps_rectangle_clip = create_programs(&mut device, "ps_rectangle_clip");
-        let ps_text_run = create_programs(&mut device, "ps_text_run");
+        let ps_text_run = create_text_programs(&mut device, "ps_text_run");
         let ps_image = create_programs(&mut device, "ps_image");
         let ps_yuv_image =
             vec![create_programs(&mut device, "ps_yuv_image_nv12"),
@@ -1729,17 +1780,17 @@ impl Renderer {
         self.device.flush();
         self.cs_text_run.reset_upload_offset();
         self.cs_line.reset_upload_offset();
-        //self.cs_blur_a8.reset_upload_offset();
-        //self.cs_blur_rgba8.reset_upload_offset();
-        //self.brush_mask.reset_upload_offset();
-        //self.brush_image_rgba8.reset_upload_offset();
-        //self.brush_image_a8.reset_upload_offset();
+        self.cs_blur_a8.reset_upload_offset();
+        self.cs_blur_rgba8.reset_upload_offset();
+        self.brush_mask.reset_upload_offset();
+        self.brush_image_rgba8.reset_upload_offset();
+        self.brush_image_a8.reset_upload_offset();
         self.cs_clip_rectangle.reset_upload_offset();
         self.cs_clip_border.reset_upload_offset();
         self.cs_clip_image.reset_upload_offset();
         self.ps_rectangle.reset_upload_offset();
         self.ps_rectangle_clip.reset_upload_offset();
-        //self.ps_text_run.reset_upload_offset();
+        self.ps_text_run.reset_upload_offset();
         self.ps_image.reset_upload_offset();
         self.ps_border_corner.reset_upload_offset();
         self.ps_border_edge.reset_upload_offset();
@@ -2129,14 +2180,13 @@ impl Renderer {
             self.gpu_profile.add_sampler(GPU_SAMPLER_TAG_TRANSPARENT);
             enable_depth_write = false;
             for batch in &target.alpha_batcher.batch_list.alpha_batch_list.batches {
-// TODO: this is related to ps_text_run
-/*
                 if self.debug_flags.contains(DebugFlags::ALPHA_PRIM_DBG) {
                     let color = match batch.key.blend_mode {
                         BlendMode::None => ColorF::new(0.3, 0.3, 0.3, 1.0),
                         BlendMode::Alpha => ColorF::new(0.0, 0.9, 0.1, 1.0),
                         BlendMode::PremultipliedAlpha => ColorF::new(0.0, 0.3, 0.7, 1.0),
                         BlendMode::Subpixel => ColorF::new(0.5, 0.0, 0.4, 1.0),
+                        _ => ColorF::new(0.0, 0.0, 0.0, 0.0),
                     }.into();
                     for item_rect in &batch.item_rects {
                         self.debug.add_rect(item_rect, color);
@@ -2154,74 +2204,75 @@ impl Renderer {
                         // 3) Consider the old constant color blend method where no clip is applied.
                         let _gm = self.gpu_profile.add_marker(GPU_TAG_PRIM_TEXT_RUN);
 
-                        self.device.set_blend(true);
-
+                        let mut ps_text_run = self.ps_text_run.get(transform_kind);
                         match batch.key.blend_mode {
                             BlendMode::PremultipliedAlpha => {
-                                self.device.set_blend_mode_premultiplied_alpha();
-
-                                self.ps_text_run.bind(
+                                ps_text_run.bind(
                                     &mut self.device,
-                                    transform_kind,
                                     projection,
-                                    TextShaderMode::from(glyph_format),
+                                    &batch.instances,
+                                    render_target,
                                     &mut self.renderer_errors,
+                                    TextShaderMode::from(glyph_format).into(),
                                 );
 
-                                self.draw_instanced_batch(
-                                    &batch.instances,
-                                    VertexArrayKind::Primitive,
-                                    &batch.key.textures
+                                ps_text_run.draw(
+                                    &mut self.device,
+                                    &BlendMode::PremultipliedAlpha,
+                                    // No subpixel pass
+                                    None,
                                 );
                             }
                             BlendMode::Subpixel => {
                                 // Using the two pass component alpha rendering technique:
                                 //
                                 // http://anholt.livejournal.com/32058.html
-                                //
-                                self.device.set_blend_mode_subpixel_pass0();
 
-                                self.ps_text_run.bind(
+                                ps_text_run.bind(
                                     &mut self.device,
-                                    transform_kind,
                                     projection,
-                                    TextShaderMode::SubpixelPass0,
-                                    &mut self.renderer_errors,
-                                );
-
-                                self.draw_instanced_batch(
                                     &batch.instances,
-                                    VertexArrayKind::Primitive,
-                                    &batch.key.textures
+                                    render_target,
+                                    &mut self.renderer_errors,
+                                    TextShaderMode::SubpixelPass0.into(),
                                 );
 
-                                self.device.set_blend_mode_subpixel_pass1();
-
-                                self.ps_text_run.bind(
+                                ps_text_run.draw(
                                     &mut self.device,
-                                    transform_kind,
+                                    &BlendMode::Subpixel,
+                                    // First subpixel pass
+                                    Some(0),
+                                );
+
+                                ps_text_run.bind(
+                                    &mut self.device,
                                     projection,
-                                    TextShaderMode::SubpixelPass1,
+                                    &batch.instances,
+                                    render_target,
                                     &mut self.renderer_errors,
+                                    TextShaderMode::SubpixelPass1.into(),
                                 );
 
                                 // When drawing the 2nd pass, we know that the VAO, textures etc
                                 // are all set up from the previous draw_instanced_batch call,
                                 // so just issue a draw call here to avoid re-uploading the
                                 // instances and re-binding textures etc.
-                                self.device
-                                    .draw_indexed_triangles_instanced_u16(6, batch.instances.len() as i32);
+
+                                ps_text_run.draw(
+                                    &mut self.device,
+                                    &BlendMode::Subpixel,
+                                    // Second subpixel pass
+                                    Some(1),
+                                );
                             }
-                            BlendMode::Alpha | BlendMode::None => {
+                            //BlendMode::Alpha | BlendMode::None => {
+                            _ => {
                                 unreachable!("bug: bad blend mode for text");
                             }
                         }
-
-                        prev_blend_mode = BlendMode::None;
-                        self.device.set_blend(false);
                     }
                     _ => {
-                        if batch.key.blend_mode != prev_blend_mode {
+                        /*if batch.key.blend_mode != prev_blend_mode {
                             match batch.key.blend_mode {
                                 BlendMode::None => {
                                     self.device.set_blend(false);
@@ -2239,7 +2290,7 @@ impl Renderer {
                                 }
                             }
                             prev_blend_mode = batch.key.blend_mode;
-                        }
+                        }*/
 
                         self.submit_batch(
                             &batch.key,
@@ -2248,17 +2299,18 @@ impl Renderer {
                             render_tasks,
                             render_target,
                             target_size,
+                            enable_depth_write,
                         );
                     }
                 }
-*/
+/*
                 self.submit_batch(&batch.key,
                                   &batch.instances,
                                   &projection,
                                   render_tasks,
                                   render_target,
                                   target_size,
-                                  enable_depth_write);
+                                  enable_depth_write);*/
             }
 
             self.gpu_profile.done_sampler();
