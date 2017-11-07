@@ -11,12 +11,167 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 
 
+#[cfg(all(target_os = "windows", feature="dx11"))]
+const DX11_DEFINE: &str = "#define WR_DX11\n";
+const SHADER_IMPORT: &str = "#include ";
+const SHADER_KIND_FRAGMENT: &str = "#define WR_FRAGMENT_SHADER\n";
+const SHADER_KIND_VERTEX: &str = "#define WR_VERTEX_SHADER\n";
+const SHADER_PREFIX: &str = "#define WR_MAX_VERTEX_TEXTURE_WIDTH 1024\n";
 #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
 const SHADER_VERSION: &'static str = "#version 150\n";
-
 #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 const SHADER_VERSION: &'static str = "#version 300 es\n";
-const SHADER_IMPORT: &str = "#include ";
+
+const CACHE_FEATURES: &[&str] = &[""];
+const CLIP_FEATURES: &[&str] = &["TRANSFORM"];
+const PRIM_DITHER_FEATURES: &[&str] = &["", "TRANSFORM", "DITHERING", "DITHERING,TRANSFORM"];
+const PRIM_FEATURES: &[&str] = &["", "TRANSFORM"];
+
+struct Shader {
+    name: &'static str,
+    source_name: &'static str,
+    features: &'static [&'static str],
+}
+
+const SHADERS: &[Shader] = &[
+    // Clip mask shaders
+    Shader {
+        name: "cs_clip_rectangle",
+        source_name: "cs_clip_rectangle",
+        features: CLIP_FEATURES,
+    },
+    Shader {
+        name: "cs_clip_image",
+        source_name: "cs_clip_image",
+        features: CLIP_FEATURES,
+    },
+    Shader {
+        name: "cs_clip_border",
+        source_name: "cs_clip_border",
+        features: CLIP_FEATURES,
+    },
+    // Cache shaders
+    Shader {
+        name: "cs_blur_a8",
+        source_name: "cs_blur",
+        features: &["ALPHA_TARGET"],
+    },
+    Shader {
+        name: "cs_blur_rgba8",
+        source_name: "cs_blur",
+        features: &["COLOR_TARGET"],
+    },
+    Shader {
+        name: "cs_text_run",
+        source_name: "cs_text_run",
+        features: CACHE_FEATURES,
+    },
+    Shader {
+        name: "cs_line",
+        source_name: "ps_line",
+        features: &["CACHE"],
+    },
+    // Prim shaders
+    Shader {
+        name: "ps_line",
+        source_name: "ps_line",
+        features: &["", "TRANSFORM"],
+    },
+    Shader {
+        name: "ps_border_corner",
+        source_name: "ps_border_corner",
+        features: PRIM_FEATURES,
+    },
+    Shader {
+        name: "ps_border_edge",
+        source_name: "ps_border_edge",
+        features: PRIM_FEATURES,
+    },
+    Shader {
+        name: "ps_gradient",
+        source_name: "ps_gradient",
+        features: PRIM_DITHER_FEATURES,
+    },
+    Shader {
+        name: "ps_angle_gradient",
+        source_name: "ps_angle_gradient",
+        features: PRIM_DITHER_FEATURES,
+    },
+    Shader {
+        name: "ps_radial_gradient",
+        source_name: "ps_radial_gradient",
+        features: PRIM_DITHER_FEATURES,
+    },
+    Shader {
+        name: "ps_blend",
+        source_name: "ps_blend",
+        features: &[""],
+    },
+    Shader {
+        name: "ps_composite",
+        source_name: "ps_composite",
+        features: &[""],
+    },
+    Shader {
+        name: "ps_hardware_composite",
+        source_name: "ps_hardware_composite",
+        features: &[""],
+    },
+    Shader {
+        name: "ps_split_composite",
+        source_name: "ps_split_composite",
+        features: &[""],
+    },
+    Shader {
+        name: "ps_image",
+        source_name: "ps_image",
+        features: PRIM_FEATURES,
+    },
+    Shader {
+        name: "ps_yuv_image",
+        source_name: "ps_yuv_image",
+        features: &["NV12",                      "",                     "INTERLEAVED_Y_CB_CR",
+                    "NV12,YUV_REC709",           "YUV_REC709",           "INTERLEAVED_Y_CB_CR,YUV_REC709",
+                    "NV12,TRANSFORM",            "TRANSFORM",            "INTERLEAVED_Y_CB_CR,TRANSFORM",
+                    "NV12,YUV_REC709,TRANSFORM", "YUV_REC709,TRANSFORM", "INTERLEAVED_Y_CB_CR,YUV_REC709,TRANSFORM"],
+    },
+    Shader {
+        name: "ps_text_run",
+        source_name: "ps_text_run",
+        features: PRIM_FEATURES,
+    },
+    Shader {
+        name: "ps_rectangle",
+        source_name: "ps_rectangle",
+        features: &["", "TRANSFORM", "CLIP", "CLIP,TRANSFORM"],
+    },
+    // Brush shaders
+    Shader {
+        name: "brush_mask",
+        source_name: "brush_mask",
+        features: &[""],
+    },
+    Shader {
+        name: "brush_image_a8",
+        source_name: "brush_image",
+        features: &["ALPHA_TARGET"],
+    },
+    Shader {
+        name: "brush_image_rgba8",
+        source_name: "brush_image",
+        features: &["COLOR_TARGET"],
+    },
+    Shader {
+        name: "debug_color",
+        source_name: "debug_color",
+        features: &[""],
+    },
+    Shader {
+        name: "debug_font",
+        source_name: "debug_font",
+        features: &[""],
+    },
+];
 
 fn write_shaders(glsl_files: Vec<PathBuf>, shader_file_path: &Path) -> HashMap<String, String> {
     let mut shader_file = File::create(shader_file_path).unwrap();
@@ -69,14 +224,14 @@ fn create_shaders(out_dir: String, shaders: &HashMap<String, String>) -> Vec<Str
         }
     }
 
-    fn parse_shader_source(source: String, shaders: &HashMap<String, String>, output: &mut String) {
+    fn parse_shader_source(source: &str, shaders: &HashMap<String, String>, output: &mut String) {
         for line in source.lines() {
             if line.starts_with(SHADER_IMPORT) {
                 let imports = line[SHADER_IMPORT.len()..].split(",");
                 // For each import, get the source, and recurse.
                 for import in imports {
                     if let Some(include) = get_shader_source(import, shaders) {
-                        parse_shader_source(include, shaders, output);
+                        parse_shader_source(&include, shaders, output);
                     }
                 }
             } else {
@@ -86,169 +241,66 @@ fn create_shaders(out_dir: String, shaders: &HashMap<String, String>) -> Vec<Str
         }
     }
 
+    pub fn build_shader_strings(base_filename: &str, features: &str, shaders: &HashMap<String, String>) -> (String, String) {
+        // Construct a list of strings to be passed to the shader compiler.
+        let mut vs_source = String::new();
+        let mut fs_source = String::new();
+
+        #[cfg(not(feature = "dx11"))]
+        vs_source.push_str(SHADER_VERSION);
+        #[cfg(not(feature = "dx11"))]
+        fs_source.push_str(SHADER_VERSION);
+
+        // Define a constant depending on whether we are compiling VS or FS.
+        vs_source.push_str(SHADER_KIND_VERTEX);
+        fs_source.push_str(SHADER_KIND_FRAGMENT);
+
+        // Add any defines that were passed by the caller.
+        vs_source.push_str(features);
+        fs_source.push_str(features);
+
+        // Parse the main .glsl file, including any imports
+        // and append them to the list of sources.
+        let mut shared_result = String::new();
+        if let Some(shared_source) = get_shader_source(base_filename, shaders) {
+            parse_shader_source(&shared_source, shaders, &mut shared_result);
+        }
+
+        //vs_source.push_str(SHADER_LINE_MARKER);
+        vs_source.push_str(&shared_result);
+        //fs_source.push_str(SHADER_LINE_MARKER);
+        fs_source.push_str(&shared_result);
+
+        (vs_source, fs_source)
+    }
+
     let mut file_names = Vec::new();
-    for (filename, _) in shaders {
-        let is_vert = filename.ends_with(".vs");
-        let is_frag = filename.ends_with(".fs");
-        let is_prim = filename.starts_with("ps_");
-        let is_cache = filename.starts_with("cs_");
-        let is_debug = filename.starts_with("debug_");
-        if (is_vert || is_frag) || !(is_prim || is_cache || is_debug) {
-            continue;
-        }
-        let is_clip_cache = filename.starts_with("cs_clip");
-        let is_ps_rect = filename.starts_with("ps_rectangle");
-        let is_line = filename.starts_with("ps_line");
-        let is_ps_text_run = filename.starts_with("ps_text_run");
-        let is_ps_blend = filename.starts_with("ps_blend");
-        let is_ps_hw_composite = filename.starts_with("ps_hardware_composite");
-        let is_ps_composite = filename.starts_with("ps_composite");
-        let is_ps_split_composite = filename.starts_with("ps_split_composite");
-        let use_dither  = filename.starts_with("ps_gradient") ||
-                          filename.starts_with("ps_angle_gradient") ||
-                          filename.starts_with("ps_radial_gradient");
-        let is_ps_yuv = filename.starts_with("ps_yuv");
+    for shader in SHADERS {
+        for config in shader.features {
+            let mut features = String::new();
 
-        let base_filename = filename.splitn(2, '.').next().unwrap();
-        let mut shader_prefix = if cfg!(target_os = "windows") && cfg!(feature = "dx11") {
-            format!("// Base shader: {}\n#define WR_MAX_VERTEX_TEXTURE_WIDTH {}\n#define WR_DX11\n",
-                    base_filename, 1024)
-        } else {
-            format!("{}\n// Base shader: {}\n#define WR_MAX_VERTEX_TEXTURE_WIDTH {}\n",
-                    SHADER_VERSION, base_filename, 1024)
-        };
-        if is_clip_cache {
-            shader_prefix.push_str("#define WR_CLIP_SHADER\n");
-        }
+            features.push_str(SHADER_PREFIX);
+            #[cfg(all(target_os = "windows", feature="dx11"))]
+            features.push_str(DX11_DEFINE);
+            features.push_str(format!("//Source: {}.glsl\n", shader.source_name).as_str());
 
-        let mut build_configs = vec!["#define WR_FEATURE_TRANSFORM\n"];
-        if is_prim {
-            // the transform feature may be disabled for the prim shaders
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n");
-        }
-
-
-        if is_ps_rect {
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_CLIP\n");
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_CLIP\n");
-        }
-
-        if is_line {
-            build_configs.push("#define WR_FEATURE_CACHE\n");
-        }
-
-        if is_ps_text_run {
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_SUBPIXEL_AA\n");
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_SUBPIXEL_AA\n");
-        }
-
-        if use_dither {
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_DITHERING\n");
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_DITHERING\n");
-        }
-
-        if is_ps_yuv {
-            build_configs = vec!["// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_NV12\n"];
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n");
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n");
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_NV12\n#define WR_FEATURE_YUV_REC709\n");
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_YUV_REC709\n");
-            build_configs.push("// WR_FEATURE_TRANSFORM disabled\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n#define WR_FEATURE_YUV_REC709\n");
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_NV12\n");
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n");
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n");
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_NV12\n#define WR_FEATURE_YUV_REC709\n");
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_YUV_REC709\n");
-            build_configs.push("#define WR_FEATURE_TRANSFORM\n#define WR_FEATURE_INTERLEAVED_Y_CB_CR\n#define WR_FEATURE_YUV_REC709\n");
-        }
-
-        for (iter, config_prefix) in build_configs.iter().enumerate() {
-            let (mut vs_source, mut fs_source) = (String::new(), String::new());
-            vs_source.push_str(shader_prefix.as_str());
-            vs_source.push_str("#define WR_VERTEX_SHADER\n");
-            fs_source.push_str(shader_prefix.as_str());
-            fs_source.push_str("#define WR_FRAGMENT_SHADER\n");
-            vs_source.push_str(config_prefix);
-            fs_source.push_str(config_prefix);
-            let mut shared_result = String::new();
-            if let Some(shared_source) = get_shader_source(base_filename, shaders) {
-                parse_shader_source(shared_source, shaders, &mut shared_result);
-            }
-            vs_source.push_str(&shared_result);
-            fs_source.push_str(&shared_result);
-            let vs_name = format!("{}.vs", base_filename);
-            if let Some(old_vs_source) = get_shader_source(&vs_name, shaders) {
-                vs_source.push_str(&old_vs_source);
-            }
-            let fs_name = format!("{}.fs", base_filename);
-            if let Some(old_fs_source) = get_shader_source(&fs_name, shaders) {
-                fs_source.push_str(&old_fs_source);
-            }
-            let mut out_file_name = String::from(base_filename);
-            if !is_ps_yuv {
-            // The following cases are possible:
-            // 0: Default, transfrom feature is enabled.
-            //    Except for ps_blend, ps_hw_composite, ps_composite and ps_split_composite shaders.
-            // 1: If the shader is prim shader, and the transform feature is disabled.
-            //    This is the default case for ps_blend, ps_hw_composite, ps_composite and ps_split_composite shaders.
-            // 2: If the shader is the `ps_rectangle`/`ps_text_run`/`gradient` shader
-            //    and the `clip`/`subpixel AA`/`dither`, transfrom features are enabled.
-            // 3: If the shader is the `ps_rectangle`/`ps_text_run`/`gradient` shader
-            //    and the `clip`/`subpixel AA`/`dither` feature is enabled but the the transfrom feature is disabled.
-                match iter {
-                    0 => {
-                        if is_prim && !(is_ps_blend || is_ps_hw_composite || is_ps_composite || is_ps_split_composite) {
-                            out_file_name.push_str("_transform");
-                        }
-                    },
-                    1 => {},
-                    2 => {
-                        if is_ps_rect {
-                            out_file_name.push_str("_clip_transform");
-                        }
-                        if is_ps_text_run {
-                            out_file_name.push_str("_subpixel_transform");
-                        }
-                        if use_dither {
-                            out_file_name.push_str("_dither_transform");
-                        }
-                        if is_line {
-                            out_file_name.push_str("_cache");
-                        }
-                    },
-                    3 => {
-                        if is_ps_rect {
-                            out_file_name.push_str("_clip");
-                        }
-                        if is_ps_text_run {
-                            out_file_name.push_str("_subpixel");
-                        }
-                        if use_dither {
-                            out_file_name.push_str("_dither");
-                        }
-                    },
-                    _ => unreachable!(),
-                }
-            } else {
-                match iter {
-                    0 => out_file_name.push_str("_nv12_601"),
-                    1 => out_file_name.push_str("_planar_601"),
-                    2 => out_file_name.push_str("_interleaved_601"),
-                    3 => out_file_name.push_str("_nv12_709"),
-                    4 => out_file_name.push_str("_planar_709"),
-                    5 => out_file_name.push_str("_interleaved_709"),
-                    6 => out_file_name.push_str("_nv12_601_transform"),
-                    7 => out_file_name.push_str("_planar_601_transform"),
-                    8 => out_file_name.push_str("_interleaved_601_transform"),
-                    9 => out_file_name.push_str("_nv12_709_transform"),
-                    10 => out_file_name.push_str("_planar_709_transform"),
-                    11 => out_file_name.push_str("_interleaved_709_transform"),
-                    _ => unreachable!(),
+            let mut file_name_postfix = String::new();
+            for feature in config.split(",") {
+                if !feature.is_empty() {
+                    features.push_str(&format!("#define WR_FEATURE_{}\n", feature));
+                    if shader.name == shader.source_name {
+                        file_name_postfix.push_str(&format!("_{}", feature.to_lowercase().as_str()));
+                    }
                 }
             }
-            let (mut vs_name, mut fs_name) = (out_file_name.clone(), out_file_name);
+            let (mut vs_source, mut fs_source) = build_shader_strings(shader.source_name, &features, shaders);
+
+            let mut filename = String::from(shader.name);
+            filename.push_str(file_name_postfix.as_str());
+            let (mut vs_name, mut fs_name) = (filename.clone(), filename);
             vs_name.push_str(".vert");
             fs_name.push_str(".frag");
+            println!("vs_name = {}, shader.name = {}", vs_name, shader.name);
             let (vs_file_path, fs_file_path) = (Path::new(&out_dir).join(vs_name.clone()), Path::new(&out_dir).join(fs_name.clone()));
             let (mut vs_file, mut fs_file) = (File::create(vs_file_path).unwrap(), File::create(fs_file_path).unwrap());
             write!(vs_file, "{}", vs_source).unwrap();
