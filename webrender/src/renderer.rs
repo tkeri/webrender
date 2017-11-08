@@ -860,6 +860,19 @@ impl ProgramPair {
         }
     }
 
+    fn get_brush(&mut self, blend_mode: BlendMode) -> &mut Box<Program> {
+        match blend_mode {
+            BlendMode::None => &mut (self.0).0,
+            BlendMode::Alpha |
+            BlendMode::PremultipliedAlpha |
+            BlendMode::Subpixel |
+            BlendMode::Max |
+            BlendMode::Multiply => {
+                &mut (self.0).1
+            }
+        }
+    }
+
     pub fn reset_upload_offset(&mut self) {
         (self.0).0.reset_upload_offset();
         (self.0).1.reset_upload_offset();
@@ -910,9 +923,15 @@ impl TextProgramPair {
 
 
 
-fn create_programs(device: &mut Device, filename: &str) -> ProgramPair {
+fn create_prim_programs(device: &mut Device, filename: &str) -> ProgramPair {
     let program = create_program(device, filename);
     filename.to_owned().push_str("_transform");
+    ProgramPair((program, create_program(device, filename)))
+}
+
+fn create_brush_programs(device: &mut Device, filename: &str) -> ProgramPair {
+    let program = create_program(device, filename);
+    filename.to_owned().push_str("_alpha_pass");
     ProgramPair((program, create_program(device, filename)))
 }
 
@@ -1067,8 +1086,8 @@ pub struct Renderer {
     cs_blur_rgba8: Box<BlurProgram>,
 
     brush_mask: Box<Program>,
-    brush_image_rgba8: Box<Program>,
-    brush_image_a8: Box<Program>,
+    brush_image_rgba8: ProgramPair,
+    brush_image_a8: ProgramPair,
 
     /// These are "cache clip shaders". These shaders are used to
     /// draw clip instances into the cached clip mask. The results
@@ -1215,40 +1234,40 @@ impl Renderer {
         let cs_blur_rgba8 = create_blur_program(&mut device, "cs_blur_rgba8");
 
         let brush_mask = create_program(&mut device, "brush_mask");
-        let brush_image_rgba8 = create_program(&mut device, "brush_image_rgba8");
-        let brush_image_a8 = create_program(&mut device, "brush_image_a8");
+        let brush_image_rgba8 = create_brush_programs(&mut device, "brush_image_color_target");
+        let brush_image_a8 = create_brush_programs(&mut device, "brush_image_alpha_target");
 
         let cs_clip_rectangle = create_clip_program(&mut device, "cs_clip_rectangle_transform");
         let cs_clip_image = create_clip_program(&mut device, "cs_clip_image_transform");
         let cs_clip_border = create_clip_program(&mut device, "cs_clip_border_transform");
 
-        let ps_rectangle = create_programs(&mut device, "ps_rectangle");
-        let ps_rectangle_clip = create_programs(&mut device, "ps_rectangle_clip");
+        let ps_rectangle = create_prim_programs(&mut device, "ps_rectangle");
+        let ps_rectangle_clip = create_prim_programs(&mut device, "ps_rectangle_clip");
         let ps_text_run = create_text_programs(&mut device, "ps_text_run");
-        let ps_image = create_programs(&mut device, "ps_image");
+        let ps_image = create_prim_programs(&mut device, "ps_image");
         let ps_yuv_image =
-            vec![create_programs(&mut device, "ps_yuv_image_nv12"),
-                 create_programs(&mut device, "ps_yuv_image_nv12_yuv_rec709"),
-                 create_programs(&mut device, "ps_yuv_image"),
-                 create_programs(&mut device, "ps_yuv_image_yuv_rec709"),
-                 create_programs(&mut device, "ps_yuv_image_interleaved_y_cb_cr"),
-                 create_programs(&mut device, "ps_yuv_image_interleaved_y_cb_cr_yuv_rec709")];
+            vec![create_prim_programs(&mut device, "ps_yuv_image_nv12"),
+                 create_prim_programs(&mut device, "ps_yuv_image_nv12_yuv_rec709"),
+                 create_prim_programs(&mut device, "ps_yuv_image"),
+                 create_prim_programs(&mut device, "ps_yuv_image_yuv_rec709"),
+                 create_prim_programs(&mut device, "ps_yuv_image_interleaved_y_cb_cr"),
+                 create_prim_programs(&mut device, "ps_yuv_image_interleaved_y_cb_cr_yuv_rec709")];
 
-        let ps_border_corner = create_programs(&mut device, "ps_border_corner");
-        let ps_border_edge = create_programs(&mut device, "ps_border_edge");
+        let ps_border_corner = create_prim_programs(&mut device, "ps_border_corner");
+        let ps_border_edge = create_prim_programs(&mut device, "ps_border_edge");
 
         let (ps_gradient, ps_angle_gradient, ps_radial_gradient) =
             if options.enable_dithering {
-                (create_programs(&mut device, "ps_gradient_dithering"),
-                 create_programs(&mut device, "ps_angle_gradient_dithering"),
-                 create_programs(&mut device, "ps_radial_gradient_dithering"))
+                (create_prim_programs(&mut device, "ps_gradient_dithering"),
+                 create_prim_programs(&mut device, "ps_angle_gradient_dithering"),
+                 create_prim_programs(&mut device, "ps_radial_gradient_dithering"))
             } else {
-                (create_programs(&mut device, "ps_gradient"),
-                 create_programs(&mut device, "ps_angle_gradient"),
-                 create_programs(&mut device, "ps_radial_gradient"))
+                (create_prim_programs(&mut device, "ps_gradient"),
+                 create_prim_programs(&mut device, "ps_angle_gradient"),
+                 create_prim_programs(&mut device, "ps_radial_gradient"))
             };
 
-        let ps_line = create_programs(&mut device, "ps_line");
+        let ps_line = create_prim_programs(&mut device, "ps_line");
 
         let ps_blend = create_program(&mut device, "ps_blend");
         let ps_hw_composite = create_program(&mut device, "ps_hardware_composite");
@@ -1926,23 +1945,15 @@ impl Renderer {
                 (&mut self.ps_blend, GPU_TAG_PRIM_BLEND)
             }
             BatchKind::Brush(brush_kind) => {
-                /*match brush_kind {
+                match brush_kind {
                     BrushBatchKind::Image(target_kind) => {
                         let shader = match target_kind {
-                            RenderTargetKind::Alpha => &mut self.brush_image_a8,
-                            RenderTargetKind::Color => &mut self.brush_image_rgba8,
+                            RenderTargetKind::Alpha => self.brush_image_a8.get_brush(key.blend_mode),
+                            RenderTargetKind::Color => self.brush_image_rgba8.get_brush(key.blend_mode),
                         };
-                        shader.bind(
-                            &mut self.device,
-                            key.blend_mode,
-                            projection,
-                            0,
-                            &mut self.renderer_errors,
-                        );
-                        GPU_TAG_BRUSH_IMAGE
+                        (shader, GPU_TAG_BRUSH_IMAGE)
                     }
-                }*/
-                return
+                }
             }
             BatchKind::Transformable(transform_kind, batch_kind) => match batch_kind {
                 TransformBatchKind::Rectangle(needs_clipping) => {

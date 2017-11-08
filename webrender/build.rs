@@ -152,14 +152,9 @@ const SHADERS: &[Shader] = &[
         features: &[""],
     },
     Shader {
-        name: "brush_image_a8",
+        name: "brush_image",
         source_name: "brush_image",
-        features: &["ALPHA_TARGET"],
-    },
-    Shader {
-        name: "brush_image_rgba8",
-        source_name: "brush_image",
-        features: &["COLOR_TARGET"],
+        features: &["ALPHA_TARGET","ALPHA_TARGET,ALPHA_PASS","COLOR_TARGET","COLOR_TARGET,ALPHA_PASS"],
     },
     Shader {
         name: "debug_color",
