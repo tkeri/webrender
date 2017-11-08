@@ -425,11 +425,11 @@ impl Device {
         &self.dither
     }
 
-    pub fn dummy_cache_a8(&mut self) -> &CacheTexture<Rgba8> {
+    pub fn dummy_cache_a8(&self) -> &CacheTexture<Rgba8> {
         self.cache_a8_textures.get(&DUMMY_ID).unwrap()
     }
 
-    pub fn dummy_cache_rgba8(&mut self) -> &CacheTexture<Rgba8> {
+    pub fn dummy_cache_rgba8(&self) -> &CacheTexture<Rgba8> {
         self.cache_rgba8_textures.get(&DUMMY_ID).unwrap()
     }
 
