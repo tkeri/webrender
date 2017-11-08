@@ -2216,6 +2216,9 @@ impl Renderer {
                         let _gm = self.gpu_profile.add_marker(GPU_TAG_PRIM_TEXT_RUN);
 
                         let mut ps_text_run = self.ps_text_run.get(transform_kind);
+                        for i in 0..batch.key.textures.colors.len() {
+                            self.texture_resolver.bind(&batch.key.textures.colors[i], TextureSampler::color(i), &mut self.device);
+                        }
                         match batch.key.blend_mode {
                             BlendMode::PremultipliedAlpha => {
                                 ps_text_run.bind(
