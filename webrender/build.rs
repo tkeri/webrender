@@ -149,7 +149,7 @@ const SHADERS: &[Shader] = &[
     Shader {
         name: "brush_mask",
         source_name: "brush_mask",
-        features: &[""],
+        features: &["","ALPHA_PASS"],
     },
     Shader {
         name: "brush_image",
