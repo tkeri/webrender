@@ -997,20 +997,17 @@ impl BindDraw for Box<BrushProgram> {
 
 fn create_prim_programs(device: &mut Device, filename: &str) -> ProgramPair {
     let program = create_program(device, filename);
-    filename.to_owned().push_str("_transform");
-    ProgramPair((program, create_program(device, filename)))
+    ProgramPair((program, create_program(device, &format!("{}_transform", filename))))
 }
 
 fn create_brush_programs(device: &mut Device, filename: &str) -> BrushProgramPair {
     let program = create_brush_program(device, filename);
-    filename.to_owned().push_str("_alpha_pass");
-    BrushProgramPair((program, create_brush_program(device, filename)))
+    BrushProgramPair((program, create_brush_program(device, &format!("{}_alpha_pass", filename))))
 }
 
 fn create_text_programs(device: &mut Device, filename: &str) -> TextProgramPair {
     let program = create_text_program(device, filename);
-    filename.to_owned().push_str("_transform");
-    TextProgramPair((program, create_text_program(device, filename)))
+    TextProgramPair((program, create_text_program(device, &format!("{}_transform", filename))))
 }
 
 #[cfg(not(feature = "dx11"))]
