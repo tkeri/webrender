@@ -154,6 +154,31 @@ gfx_defines! {
         blend_value: gfx::BlendRef = (),
     }
 
+    pipeline brush {
+        locals: gfx::ConstantBuffer<Locals> = "Locals",
+        mode: gfx::Global<i32> = "uMode",
+        transform: gfx::Global<[[f32; 4]; 4]> = "uTransform",
+        device_pixel_ratio: gfx::Global<f32> = "uDevicePixelRatio",
+        vbuf: gfx::VertexBuffer<Position> = (),
+        ibuf: gfx::InstanceBuffer<PrimitiveInstances> = (),
+
+        color0: gfx::TextureSampler<[f32; 4]> = "sColor0",
+        color1: gfx::TextureSampler<[f32; 4]> = "sColor1",
+        color2: gfx::TextureSampler<[f32; 4]> = "sColor2",
+        cache_a8: gfx::TextureSampler<[f32; 4]> = "sCacheA8",
+        cache_rgba8: gfx::TextureSampler<[f32; 4]> = "sCacheRGBA8",
+        shared_cache_a8: gfx::TextureSampler<[f32; 4]> = "sSharedCacheA8",
+
+        resource_cache: gfx::TextureSampler<[f32; 4]> = "sResourceCache",
+        layers: gfx::TextureSampler<[f32; 4]> = "sLayers",
+        render_tasks: gfx::TextureSampler<[f32; 4]> = "sRenderTasks",
+
+        out_color: gfx::RawRenderTarget = ("Target0",
+                                           Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Srgb),
+                                           gfx::state::MASK_ALL,
+                                           None),
+    }
+
     pipeline blur {
         locals: gfx::ConstantBuffer<Locals> = "Locals",
         mode: gfx::Global<i32> = "uMode",
@@ -215,7 +240,7 @@ gfx_defines! {
         out_color: gfx::RawRenderTarget = ("Target0",
                                            Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Srgb),
                                            gfx::state::MASK_ALL,
-                                           Some(ALPHA)),
+                                           None),
     }
 
     vertex DebugFontVertices {
@@ -239,6 +264,7 @@ gfx_defines! {
 }
 
 type PrimPSO = gfx::PipelineState<R, primitive::Meta>;
+type BrushPSO = gfx::PipelineState<R, brush::Meta>;
 type ClipPSO = gfx::PipelineState<R, clip::Meta>;
 type BlurPSO = gfx::PipelineState<R, blur::Meta>;
 type DebugColorPSO = gfx::PipelineState<R, debug_color::Meta>;
@@ -426,10 +452,10 @@ impl Program {
         self.data.shared_cache_a8.0 = device.get_texture_srv_and_sampler(TextureSampler::SharedCacheA8).0;
 
         if render_target.is_some() {
-            let tex = device.cache_rgba8_textures
-                    .get(&render_target.unwrap().0)
-                    .unwrap_or(device.cache_a8_textures.get(&render_target.unwrap().0)
-                    .unwrap_or(device.dummy_cache_a8()));
+            if device.cache_a8_textures.contains_key(&render_target.unwrap().0) {
+                println!("!!!!!!!!!!!!! WARNING wrong texture id {:?}", render_target);
+            }
+            let tex = device.cache_rgba8_textures.get(&render_target.unwrap().0).unwrap();
             self.data.out_color = tex.rtv.raw().clone();
             self.data.out_depth = tex.dsv.clone();
         } else {
@@ -441,6 +467,104 @@ impl Program {
     pub fn draw(&mut self, device: &mut Device, blendmode: &BlendMode, enable_depth_write: bool)
     {
         device.encoder.draw(&self.slice, &self.get_pso(blendmode, enable_depth_write), &self.data);
+    }
+}
+
+#[derive(Debug)]
+pub struct BrushProgram {
+    pub data: brush::Data<R>,
+    pub pso: BrushPSO,
+    pub pso_alpha: BrushPSO,
+    pub pso_prem_alpha: BrushPSO,
+    pub slice: gfx::Slice<R>,
+    pub upload: (gfx::handle::Buffer<R, PrimitiveInstances>, usize),
+}
+
+impl BrushProgram {
+    pub fn new(
+        data: brush::Data<R>,
+        psos: (BrushPSO, BrushPSO, BrushPSO),
+        slice: gfx::Slice<R>,
+        upload: gfx::handle::Buffer<R, PrimitiveInstances>,
+    ) -> BrushProgram {
+        BrushProgram {
+            data: data,
+            pso: psos.0,
+            pso_alpha: psos.1,
+            pso_prem_alpha: psos.2,
+            slice: slice,
+            upload: (upload, 0),
+        }
+    }
+
+    pub fn get_pso(&self, blend: &BlendMode) -> &BrushPSO {
+        match *blend {
+            BlendMode::Alpha => &self.pso_alpha,
+            BlendMode::PremultipliedAlpha => &self.pso_prem_alpha,
+            _ => &self.pso,
+        }
+    }
+
+    pub fn reset_upload_offset(&mut self) {
+        self.upload.1 = 0;
+    }
+
+    pub fn bind(
+        &mut self,
+        device: &mut Device,
+        projection: &Transform3D<f32>,
+        instances: &[PrimitiveInstance],
+        render_target: Option<(&TextureId, i32)>,
+        renderer_errors: &mut Vec<RendererError>,
+        mode: i32,
+    ) {
+        self.data.transform = projection.to_row_arrays();
+        self.data.mode = mode;
+        let locals = Locals {
+            transform: self.data.transform,
+            device_pixel_ratio: self.data.device_pixel_ratio,
+            mode: self.data.mode,
+        };
+        device.encoder.update_buffer(&self.data.locals, &[locals], 0).unwrap();
+
+        {
+            let mut writer = device.factory.write_mapping(&self.upload.0).unwrap();
+            for (i, inst) in instances.iter().enumerate() {
+                writer[i + self.upload.1].update(inst);
+            }
+        }
+
+        {
+            self.slice.instances = Some((instances.len() as u32, 0));
+        }
+        device.encoder.copy_buffer(&self.upload.0, &self.data.ibuf, self.upload.1, 0, instances.len()).unwrap();
+        self.upload.1 += instances.len();
+
+        println!("bind={:?}", device.bound_textures);
+        self.data.color0 = device.get_texture_srv_and_sampler(TextureSampler::Color0);
+        self.data.color1 = device.get_texture_srv_and_sampler(TextureSampler::Color1);
+        self.data.color2 = device.get_texture_srv_and_sampler(TextureSampler::Color2);
+        self.data.cache_a8.0 = device.get_texture_srv_and_sampler(TextureSampler::CacheA8).0;
+        self.data.cache_rgba8.0 = device.get_texture_srv_and_sampler(TextureSampler::CacheRGBA8).0;
+        self.data.shared_cache_a8.0 = device.get_texture_srv_and_sampler(TextureSampler::SharedCacheA8).0;
+
+        if render_target.is_some() {
+            if device.cache_a8_textures.contains_key(&render_target.unwrap().0) {
+                println!("!!!!!!!!!!!!! cache_a8 {:?}", render_target);
+            }
+            let tex = device.cache_rgba8_textures
+                    .get(&render_target.unwrap().0)
+                    .unwrap_or(device.cache_a8_textures.get(&render_target.unwrap().0)
+                    .unwrap_or(device.dummy_cache_a8()));
+            self.data.out_color = tex.rtv.raw().clone();
+        } else {
+            self.data.out_color = device.main_color.raw().clone();
+        }
+    }
+
+    pub fn draw(&mut self, device: &mut Device, blendmode: &BlendMode)
+    {
+        device.encoder.draw(&self.slice, &self.get_pso(blendmode), &self.data);
     }
 }
 
@@ -528,10 +652,7 @@ impl TextProgram {
         self.data.shared_cache_a8.0 = device.get_texture_srv_and_sampler(TextureSampler::SharedCacheA8).0;
 
         if render_target.is_some() {
-            let tex = device.cache_rgba8_textures
-                    .get(&render_target.unwrap().0)
-                    .unwrap_or(device.cache_a8_textures.get(&render_target.unwrap().0)
-                    .unwrap_or(device.dummy_cache_a8()));
+            let tex = device.cache_rgba8_textures.get(&render_target.unwrap().0).unwrap();
             self.data.out_color = tex.rtv.raw().clone();
             self.data.out_depth = tex.dsv.clone();
         } else {
@@ -604,8 +725,13 @@ impl BlurProgram {
 
         println!("bind={:?}", device.bound_textures);
         self.data.cache_rgba8.0 = device.get_texture_srv_and_sampler(TextureSampler::CacheRGBA8).0;
+        self.data.cache_a8.0 = device.get_texture_srv_and_sampler(TextureSampler::CacheA8).0;
 
+        println!("********RT = {:?}", render_target);
         if render_target.is_some() {
+            if device.cache_a8_textures.contains_key(&render_target.unwrap().0) {
+                println!("!!!!!!!!!!!!! cache_a8 blur{:?}", render_target);
+            }
             let tex = device.cache_rgba8_textures
                     .get(&render_target.unwrap().0)
                     .unwrap_or(device.cache_a8_textures.get(&render_target.unwrap().0)
@@ -728,6 +854,7 @@ impl DebugColorProgram {
         projection: &Transform3D<f32>,
         indices: &[u32],
         vertices: &[DebugColorVertex],
+        render_target: Option<(&TextureId, i32)>,
     ) {
         self.data.transform = projection.to_row_arrays();
         let quad_vertices: Vec<DebugColorVertices> = vertices.iter().map(|v| DebugColorVertices::new([v.x, v.y], ColorF::from(v.color).to_array())).collect();
@@ -744,6 +871,18 @@ impl DebugColorProgram {
             mode: self.data.mode,
         };
         device.encoder.update_buffer(&self.data.locals, &[locals], 0).unwrap();
+        if render_target.is_some() {
+            if device.cache_a8_textures.contains_key(&render_target.unwrap().0) {
+                println!("!!!!!!!!!!!!! cache_a8 debug_color{:?}", render_target);
+            }
+            let tex = device.cache_rgba8_textures
+                    .get(&render_target.unwrap().0)
+                    .unwrap_or(device.cache_a8_textures.get(&render_target.unwrap().0)
+                    .unwrap_or(device.dummy_cache_a8()));
+            self.data.out_color = tex.rtv.raw().clone();
+        } else {
+            self.data.out_color = device.main_color.raw().clone();
+        }
     }
 
     pub fn draw(&mut self, device: &mut Device) {
@@ -868,6 +1007,41 @@ impl Device {
         (pso_depth_write, pso, pso_alpha_depth_write, pso_alpha, pso_prem_alpha_depth_write, pso_prem_alpha)
     }
 
+    pub fn create_brush_psos(&mut self, vert_src: &[u8],frag_src: &[u8]) -> (BrushPSO, BrushPSO, BrushPSO) {
+        let pso = self.factory.create_pipeline_simple(
+            vert_src,
+            frag_src,
+            brush::new()
+        ).unwrap();
+
+        let pso_alpha = self.factory.create_pipeline_simple(
+            vert_src,
+            frag_src,
+            brush::Init {
+                out_color: ("Target0",
+                            Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Srgb),
+                            gfx::state::MASK_ALL,
+                            Some(ALPHA)),
+                .. brush::new()
+            }
+        ).unwrap();
+
+        let pso_prem_alpha = self.factory.create_pipeline_simple(
+            vert_src,
+            frag_src,
+            brush::Init {
+                out_color: ("Target0",
+                            Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Srgb),
+                            gfx::state::MASK_ALL,
+                            Some(PREM_ALPHA)),
+                .. brush::new()
+            }
+        ).unwrap();
+
+
+        (pso, pso_alpha, pso_prem_alpha)
+    }
+
     pub fn create_text_psos(&mut self, vert_src: &[u8],frag_src: &[u8]) -> (PrimPSO, PrimPSO, PrimPSO) {
         let pso_prem_alpha = self.factory.create_pipeline_simple(
             vert_src,
@@ -979,6 +1153,42 @@ impl Device {
         Program::new(data, psos, self.slice.clone(), upload)
     }
 
+    pub fn create_brush_program(&mut self, vert_src: &[u8], frag_src: &[u8]) -> BrushProgram {
+        let upload = self.factory.create_upload_buffer(MAX_INSTANCE_COUNT).unwrap();
+        {
+            let mut writer = self.factory.write_mapping(&upload).unwrap();
+            for i in 0..MAX_INSTANCE_COUNT {
+                writer[i] = PrimitiveInstances::new();
+            }
+        }
+
+        let instances = self.factory.create_buffer(MAX_INSTANCE_COUNT,
+                                                   gfx::buffer::Role::Vertex,
+                                                   gfx::memory::Usage::Data,
+                                                   gfx::TRANSFER_DST).unwrap();
+
+        let data = brush::Data {
+            locals: self.factory.create_constant_buffer(1),
+            transform: [[0f32; 4]; 4],
+            device_pixel_ratio: DEVICE_PIXEL_RATIO,
+            mode: 0,
+            vbuf: self.vertex_buffer.clone(),
+            ibuf: instances,
+            color0: (self.dummy_image().srv.clone(), self.sampler.0.clone()),
+            color1: (self.dummy_image().srv.clone(), self.sampler.0.clone()),
+            color2: (self.dummy_image().srv.clone(), self.sampler.0.clone()),
+            cache_a8: (self.dummy_cache_a8().srv.clone(), self.sampler.0.clone()),
+            cache_rgba8: (self.dummy_cache_rgba8().srv.clone(), self.sampler.1.clone()),
+            shared_cache_a8: (self.dummy_cache_a8().srv.clone(), self.sampler.0.clone()),
+            resource_cache: (self.resource_cache.srv.clone(), self.sampler.0.clone()),
+            layers: (self.layers.srv.clone(), self.sampler.0.clone()),
+            render_tasks: (self.render_tasks.srv.clone(), self.sampler.0.clone()),
+            out_color: self.main_color.raw().clone(),
+        };
+        let psos = self.create_brush_psos(vert_src, frag_src);
+        BrushProgram::new(data, psos, self.slice.clone(), upload)
+    }
+
     pub fn create_text_program(&mut self, vert_src: &[u8], frag_src: &[u8]) -> TextProgram {
         let upload = self.factory.create_upload_buffer(MAX_INSTANCE_COUNT).unwrap();
         {
@@ -1088,6 +1298,34 @@ impl Device {
     }
 
     pub fn create_debug_color_program(&mut self, vert_src: &[u8], frag_src: &[u8]) -> DebugColorProgram {
+        // Creating a dummy vertexbuffer here. This is replaced in the draw_debug_color call.
+        let quad_indices: &[u16] = &[0];
+        let quad_vertices = [DebugColorVertices::new([0.0, 0.0], [0.0, 0.0, 0.0, 0.0])];
+        let (vertex_buffer, mut slice) = self.factory.create_vertex_buffer_with_slice(&quad_vertices, quad_indices);
+
+        let data = debug_color::Data {
+            locals: self.factory.create_constant_buffer(1),
+            transform: [[0f32; 4]; 4],
+            device_pixel_ratio: DEVICE_PIXEL_RATIO,
+            mode: 0,
+            vbuf: vertex_buffer,
+            out_color: self.main_color.raw().clone(),
+        };
+        let pso = self.factory.create_pipeline_simple(
+            vert_src,
+            frag_src,
+            debug_color::Init {
+                out_color: ("Target0",
+                            Format(gfx::format::SurfaceType::R8_G8_B8_A8, gfx::format::ChannelType::Srgb),
+                            gfx::state::MASK_ALL,
+                            Some(ALPHA)),
+                .. debug_color::new()
+            },
+        ).unwrap();
+        DebugColorProgram::new(data, pso, self.slice.clone())
+    }
+
+    pub fn create_clear_program(&mut self, vert_src: &[u8], frag_src: &[u8]) -> DebugColorProgram {
         // Creating a dummy vertexbuffer here. This is replaced in the draw_debug_color call.
         let quad_indices: &[u16] = &[0];
         let quad_vertices = [DebugColorVertices::new([0.0, 0.0], [0.0, 0.0, 0.0, 0.0])];

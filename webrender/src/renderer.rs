@@ -17,11 +17,11 @@ use api::{YUV_COLOR_SPACES, YUV_FORMATS};
 use api::{YuvColorSpace, YuvFormat};
 #[cfg(not(feature = "debugger"))]
 use api::ApiMsg;
-use api::DebugCommand;
+use api::{ColorU, DebugCommand};
 #[cfg(not(feature = "debugger"))]
 use api::channel::MsgSender;
 use debug_colors;
-use debug_render::DebugRenderer;
+use debug_render::{DebugRenderer, DebugColorVertex};
 #[cfg(feature = "debugger")]
 use debug_server::{self, DebugServer};
 use device::{BackendDevice, Device, DeviceInitParams, FrameId, VertexDescriptor, GpuMarker, GpuProfiler};
@@ -36,7 +36,7 @@ use gpu_types::PrimitiveInstance;
 use internal_types::{BatchTextures, SourceTexture, ORTHO_FAR_PLANE, ORTHO_NEAR_PLANE};
 use internal_types::{CacheTextureId, FastHashMap, RendererFrame, ResultMsg, TextureUpdateOp};
 use internal_types::{DebugOutput, RenderTargetMode, TextureUpdateList, TextureUpdateSource};
-use pipelines::{BlurProgram, ClipProgram, DebugColorProgram, DebugFontProgram, Program, TextProgram};
+use pipelines::{BlurProgram, BrushProgram, ClipProgram, DebugColorProgram, DebugFontProgram, Program, TextProgram};
 use profiler::{BackendProfileCounters, Profiler};
 use profiler::{GpuProfileTag, RendererProfileCounters, RendererProfileTimers};
 use rayon::Configuration as ThreadPoolConfig;
@@ -860,7 +860,30 @@ impl ProgramPair {
         }
     }
 
-    fn get_brush(&mut self, blend_mode: BlendMode) -> &mut Box<Program> {
+    pub fn reset_upload_offset(&mut self) {
+        (self.0).0.reset_upload_offset();
+        (self.0).1.reset_upload_offset();
+    }
+
+    pub fn bind(
+        &mut self,
+        device: &mut Device,
+        transform_kind: TransformedRectKind,
+        projection: &Transform3D<f32>,
+        instances: &[PrimitiveInstance],
+        render_target: Option<(&TextureId, i32)>,
+        renderer_errors: &mut Vec<RendererError>,
+        mode: i32,
+    ) {
+        self.get(transform_kind).bind(device, projection, instances, render_target, renderer_errors, mode);
+    }
+}
+
+#[derive(Debug)]
+struct BrushProgramPair((Box<BrushProgram>, Box<BrushProgram>));
+
+impl BrushProgramPair {
+    fn get(&mut self, blend_mode: BlendMode) -> &mut Box<BrushProgram> {
         match blend_mode {
             BlendMode::None => &mut (self.0).0,
             BlendMode::Alpha |
@@ -881,17 +904,18 @@ impl ProgramPair {
     pub fn bind(
         &mut self,
         device: &mut Device,
-        transform_kind: TransformedRectKind,
+        blend_mode: BlendMode,
         projection: &Transform3D<f32>,
         instances: &[PrimitiveInstance],
         render_target: Option<(&TextureId, i32)>,
         renderer_errors: &mut Vec<RendererError>,
         mode: i32,
     ) {
-        self.get(transform_kind).bind(device, projection, instances, render_target, renderer_errors, mode);
+        self.get(blend_mode).bind(device, projection, instances, render_target, renderer_errors, mode);
     }
 }
 
+#[derive(Debug)]
 struct TextProgramPair((Box<TextProgram>, Box<TextProgram>));
 
 impl TextProgramPair {
@@ -921,6 +945,54 @@ impl TextProgramPair {
     }
 }
 
+trait BindDraw {
+    fn bind_resources(
+        &mut self,
+        device: &mut Device,
+        projection: &Transform3D<f32>,
+        instances: &[PrimitiveInstance],
+        render_target: Option<(&TextureId, i32)>,
+        renderer_errors: &mut Vec<RendererError>,
+        mode: i32
+    );
+    fn call_draw(&mut self, device: &mut Device, blend_mode: &BlendMode, enable_depth_write: bool);
+}
+
+impl BindDraw for Box<Program> {
+    fn bind_resources(
+        &mut self,
+        device: &mut Device,
+        projection: &Transform3D<f32>,
+        instances: &[PrimitiveInstance],
+        render_target: Option<(&TextureId, i32)>,
+        renderer_errors: &mut Vec<RendererError>,
+        mode: i32
+    ) {
+        self.bind(device, projection, instances, render_target, renderer_errors, mode)
+    }
+
+    fn call_draw(&mut self, device: &mut Device, blend_mode: &BlendMode, enable_depth_write: bool) {
+        self.draw(device, blend_mode, enable_depth_write)
+    }
+}
+
+impl BindDraw for Box<BrushProgram> {
+    fn bind_resources(
+        &mut self,
+        device: &mut Device,
+        projection: &Transform3D<f32>,
+        instances: &[PrimitiveInstance],
+        render_target: Option<(&TextureId, i32)>,
+        renderer_errors: &mut Vec<RendererError>,
+        mode: i32
+    ) {
+        self.bind(device, projection, instances, render_target, renderer_errors, mode)
+    }
+
+    fn call_draw(&mut self, device: &mut Device, blend_mode: &BlendMode, enable_depth_write: bool) {
+        self.draw(device, blend_mode)
+    }
+}
 
 
 fn create_prim_programs(device: &mut Device, filename: &str) -> ProgramPair {
@@ -929,24 +1001,10 @@ fn create_prim_programs(device: &mut Device, filename: &str) -> ProgramPair {
     ProgramPair((program, create_program(device, filename)))
 }
 
-fn create_brush_programs(device: &mut Device, filename: &str) -> ProgramPair {
-    let program = create_program(device, filename);
+fn create_brush_programs(device: &mut Device, filename: &str) -> BrushProgramPair {
+    let program = create_brush_program(device, filename);
     filename.to_owned().push_str("_alpha_pass");
-    ProgramPair((program, create_program(device, filename)))
-}
-
-#[cfg(not(feature = "dx11"))]
-fn create_program(device: &mut Device, filename: &str) -> Box<Program> {
-    let vs = get_shader_source(filename, ".vert");
-    let ps = get_shader_source(filename, ".frag");
-    Box::new(device.create_program(vs.as_slice(), ps.as_slice()))
-}
-
-#[cfg(all(target_os = "windows", feature="dx11"))]
-fn create_program(device: &mut Device, filename: &str) -> Box<Program> {
-    let vs = get_shader_source(filename, ".vert.fx");
-    let ps = get_shader_source(filename, ".frag.fx");
-    Box::new(device.create_program(vs.as_slice(), ps.as_slice()))
+    BrushProgramPair((program, create_brush_program(device, filename)))
 }
 
 fn create_text_programs(device: &mut Device, filename: &str) -> TextProgramPair {
@@ -956,6 +1014,35 @@ fn create_text_programs(device: &mut Device, filename: &str) -> TextProgramPair 
 }
 
 #[cfg(not(feature = "dx11"))]
+fn create_program(device: &mut Device, filename: &str) -> Box<Program> {
+    let vs = get_shader_source(filename, ".vert");
+    let ps = get_shader_source(filename, ".frag");
+    Box::new(device.create_program(vs.as_slice(), ps.as_slice()))
+}
+
+#[cfg(all(target_os = "windows", feature="dx11"))]
+fn create_program(device: &mut Device, filename: &str) -> Box<Program> {
+    let vs = get_shader_source(filename, ".vert.fx");
+    let ps = get_shader_source(filename, ".frag.fx");
+    Box::new(device.create_program(vs.as_slice(), ps.as_slice()))
+}
+
+#[cfg(not(feature = "dx11"))]
+fn create_brush_program(device: &mut Device, filename: &str) -> Box<BrushProgram> {
+    let vs = get_shader_source(filename, ".vert");
+    let ps = get_shader_source(filename, ".frag");
+    Box::new(device.create_brush_program(vs.as_slice(), ps.as_slice()))
+}
+
+#[cfg(all(target_os = "windows", feature="dx11"))]
+fn create_brush_program(device: &mut Device, filename: &str) -> Box<BrushProgram> {
+    let vs = get_shader_source(filename, ".vert.fx");
+    let ps = get_shader_source(filename, ".frag.fx");
+    Box::new(device.create_brush_program(vs.as_slice(), ps.as_slice()))
+}
+
+
+#[cfg(not(feature = "dx11"))]
 fn create_text_program(device: &mut Device, filename: &str) -> Box<TextProgram> {
     let vs = get_shader_source(filename, ".vert");
     let ps = get_shader_source(filename, ".frag");
@@ -1009,6 +1096,20 @@ pub fn create_debug_color_program(device: &mut Device, filename: &str) -> DebugC
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     device.create_debug_color_program(vs.as_slice(), ps.as_slice())
+}
+
+#[cfg(not(feature = "dx11"))]
+pub fn create_clear_program(device: &mut Device, filename: &str) -> Box<DebugColorProgram> {
+    let vs = get_shader_source(filename, ".vert");
+    let ps = get_shader_source(filename, ".frag");
+    Box::new(device.create_clear_program(vs.as_slice(), ps.as_slice()))
+}
+
+#[cfg(all(target_os = "windows", feature="dx11"))]
+pub fn create_clear_program(device: &mut Device, filename: &str) -> Box<DebugColorProgram> {
+    let vs = get_shader_source(filename, ".vert.fx");
+    let ps = get_shader_source(filename, ".frag.fx");
+    Box::new(device.create_clear_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(not(feature = "dx11"))]
@@ -1085,9 +1186,9 @@ pub struct Renderer {
     cs_blur_a8: Box<BlurProgram>,
     cs_blur_rgba8: Box<BlurProgram>,
 
-    brush_mask: Box<Program>,
-    brush_image_rgba8: ProgramPair,
-    brush_image_a8: ProgramPair,
+    brush_mask: BrushProgramPair,
+    brush_image_rgba8: BrushProgramPair,
+    brush_image_a8: BrushProgramPair,
 
     /// These are "cache clip shaders". These shaders are used to
     /// draw clip instances into the cached clip mask. The results
@@ -1119,6 +1220,8 @@ pub struct Renderer {
     ps_hw_composite: Box<Program>,
     ps_split_composite: Box<Program>,
     ps_composite: Box<Program>,
+
+    ps_clear: Box<DebugColorProgram>,
 
     max_texture_size: u32,
 
@@ -1233,7 +1336,7 @@ impl Renderer {
         let cs_blur_a8 = create_blur_program(&mut device, "cs_blur_a8");
         let cs_blur_rgba8 = create_blur_program(&mut device, "cs_blur_rgba8");
 
-        let brush_mask = create_program(&mut device, "brush_mask");
+        let brush_mask = create_brush_programs(&mut device, "brush_mask");
         let brush_image_rgba8 = create_brush_programs(&mut device, "brush_image_color_target");
         let brush_image_a8 = create_brush_programs(&mut device, "brush_image_alpha_target");
 
@@ -1273,6 +1376,7 @@ impl Renderer {
         let ps_hw_composite = create_program(&mut device, "ps_hardware_composite");
         let ps_split_composite = create_program(&mut device, "ps_split_composite");
         let ps_composite = create_program(&mut device, "ps_composite");
+        let ps_clear = create_clear_program(&mut device, "debug_color");
 
         let device_max_size = device.max_texture_size();
         // 512 is the minimum that the texture cache can work with.
@@ -1391,6 +1495,7 @@ impl Renderer {
             ps_hw_composite,
             ps_split_composite,
             ps_composite,
+            ps_clear,
             ps_line,
             debug: debug_renderer,
             debug_flags,
@@ -1933,25 +2038,31 @@ impl Renderer {
     ) {
         let (program, marker) = match key.kind {
             BatchKind::Composite { .. } => {
-                (&mut self.ps_composite, GPU_TAG_PRIM_COMPOSITE)
+                (&mut self.ps_composite as &mut BindDraw, GPU_TAG_PRIM_COMPOSITE)
             }
             BatchKind::HardwareComposite => {
-                (&mut self.ps_composite, GPU_TAG_PRIM_COMPOSITE)
+                (&mut self.ps_composite as &mut BindDraw, GPU_TAG_PRIM_COMPOSITE)
             }
             BatchKind::SplitComposite => {
-                (&mut self.ps_split_composite ,GPU_TAG_PRIM_SPLIT_COMPOSITE)
+                (&mut self.ps_split_composite as &mut BindDraw, GPU_TAG_PRIM_SPLIT_COMPOSITE)
             }
             BatchKind::Blend => {
-                (&mut self.ps_blend, GPU_TAG_PRIM_BLEND)
+                (&mut self.ps_blend as &mut BindDraw, GPU_TAG_PRIM_BLEND)
             }
             BatchKind::Brush(brush_kind) => {
                 match brush_kind {
                     BrushBatchKind::Image(target_kind) => {
                         let shader = match target_kind {
-                            RenderTargetKind::Alpha => self.brush_image_a8.get_brush(key.blend_mode),
-                            RenderTargetKind::Color => self.brush_image_rgba8.get_brush(key.blend_mode),
+                            RenderTargetKind::Alpha => {
+                                println!("brush_image_a8");
+                                self.brush_image_a8.get(key.blend_mode)
+                            },
+                            RenderTargetKind::Color => {
+                                println!("brush_image_rgba8");
+                                self.brush_image_rgba8.get(key.blend_mode)
+                            },
                         };
-                        (shader, GPU_TAG_BRUSH_IMAGE)
+                        (shader  as &mut BindDraw, GPU_TAG_BRUSH_IMAGE)
                     }
                 }
             }
@@ -1968,41 +2079,41 @@ impl Renderer {
                         }
                     );
                     if needs_clipping {
-                        (self.ps_rectangle_clip.get(transform_kind), GPU_TAG_PRIM_RECT)
+                        (self.ps_rectangle_clip.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_RECT)
                     } else {
-                        (self.ps_rectangle.get(transform_kind), GPU_TAG_PRIM_RECT)
+                        (self.ps_rectangle.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_RECT)
                     }
                 }
                 TransformBatchKind::Line => {
-                    (self.ps_line.get(transform_kind), GPU_TAG_PRIM_LINE)
+                    (self.ps_line.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_LINE)
                 }
                 TransformBatchKind::TextRun(..) => {
                     unreachable!("bug: text batches are special cased");
                 }
                 TransformBatchKind::Image(image_buffer_kind) => {
-                    (self.ps_image.get(transform_kind), GPU_TAG_PRIM_IMAGE)
+                    (self.ps_image.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_IMAGE)
                 }
                 TransformBatchKind::YuvImage(image_buffer_kind, format, color_space) => {
                     let shader_index = Renderer::get_yuv_shader_index(image_buffer_kind,
                                                                       format,
                                                                       color_space,
                                                                       self.ps_yuv_image.len());
-                    (self.ps_yuv_image[shader_index].get(transform_kind), GPU_TAG_PRIM_YUV_IMAGE)
+                    (self.ps_yuv_image[shader_index].get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_YUV_IMAGE)
                 }
                 TransformBatchKind::BorderCorner => {
-                    (self.ps_border_corner.get(transform_kind), GPU_TAG_PRIM_BORDER_CORNER)
+                    (self.ps_border_corner.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_BORDER_CORNER)
                 }
                 TransformBatchKind::BorderEdge => {
-                    (self.ps_border_edge.get(transform_kind), GPU_TAG_PRIM_BORDER_EDGE)
+                    (self.ps_border_edge.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_BORDER_EDGE)
                 }
                 TransformBatchKind::AlignedGradient => {
-                    (self.ps_gradient.get(transform_kind), GPU_TAG_PRIM_GRADIENT)
+                    (self.ps_gradient.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_GRADIENT)
                 }
                 TransformBatchKind::AngleGradient => {
-                    (self.ps_angle_gradient.get(transform_kind), GPU_TAG_PRIM_ANGLE_GRADIENT)
+                    (self.ps_angle_gradient.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_ANGLE_GRADIENT)
                 }
                 TransformBatchKind::RadialGradient => {
-                    (self.ps_radial_gradient.get(transform_kind), GPU_TAG_PRIM_RADIAL_GRADIENT)
+                    (self.ps_radial_gradient.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_RADIAL_GRADIENT)
                 }
             },
         };
@@ -2085,9 +2196,9 @@ impl Renderer {
             self.texture_resolver.bind(&key.textures.colors[i], TextureSampler::color(i), &mut self.device);
         }
         let mode = 0;
-        program.bind(&mut self.device, projection, instances, render_target, &mut self.renderer_errors, mode);
+        program.bind_resources(&mut self.device, projection, instances, render_target, &mut self.renderer_errors, mode);
         self.profile_counters.vertices.add(6 * instances.len());
-        program.draw(&mut self.device, &key.blend_mode, enable_depth_write);
+        program.call_draw(&mut self.device, &key.blend_mode, enable_depth_write);
 }
 
     fn draw_color_target(
@@ -2386,14 +2497,42 @@ impl Renderer {
             let clear_color = [1.0, 1.0, 1.0, 0.0];
             self.device.clear_render_target_alpha(render_target.0, clear_color);
 
-            // TODO(zgy): clear_target_rect with shader
-            /*let zero_color = [0.0, 0.0, 0.0, 0.0];
+            let (mut tri_vertices, mut tri_indices) = (Vec::new(), Vec::new());
+            let zero_color = ColorU::new(0, 0, 0, 0);
             for task_id in &target.zero_clears {
                 let task = render_tasks.get(*task_id);
                 let (rect, _) = task.get_target_rect();
-                self.device
-                    .clear_target_rect(Some(zero_color), None, rect);
-            }*/
+                let vertex_count = tri_vertices.len() as u32;
+
+                tri_indices.push(vertex_count + 0);
+                tri_indices.push(vertex_count + 1);
+                tri_indices.push(vertex_count + 2);
+                tri_indices.push(vertex_count + 2);
+                tri_indices.push(vertex_count + 1);
+                tri_indices.push(vertex_count + 3);
+
+                let (x0, y0, x1, y1) = (
+                    rect.origin.x as f32,
+                    rect.origin.y as f32,
+                    (rect.origin.x + rect.size.width) as f32,
+                    (rect.origin.y + rect.size.height) as f32,
+                );
+                tri_vertices.push(DebugColorVertex::new(x0, y0, zero_color));
+                tri_vertices.push(DebugColorVertex::new(x1, y0, zero_color));
+                tri_vertices.push(DebugColorVertex::new(x0, y1, zero_color));
+                tri_vertices.push(DebugColorVertex::new(x1, y1, zero_color));
+
+            }
+            if !tri_vertices.is_empty() {
+                self.ps_clear.bind(
+                    &mut self.device,
+                    projection,
+                    &tri_indices,
+                    &tri_vertices,
+                    Some(render_target),
+                );
+                self.ps_clear.draw(&mut self.device);
+            }
         }
 
         // Draw any blurs for this target.
@@ -2420,8 +2559,9 @@ impl Renderer {
         if !target.rect_cache_prims.is_empty() {
             println!("brush_mask");
             let _gm = self.gpu_profile.add_marker(GPU_TAG_BRUSH_MASK);
-            self.brush_mask.bind(&mut self.device, projection, &target.rect_cache_prims, Some(render_target), &mut self.renderer_errors, 0);
-            self.brush_mask.draw(&mut self.device, &BlendMode::None, false);
+            let shader = self.brush_mask.get(BlendMode::None);
+            shader.bind(&mut self.device, projection, &target.rect_cache_prims, Some(render_target), &mut self.renderer_errors, 0);
+            shader.draw(&mut self.device, &BlendMode::None);
         }
 
 

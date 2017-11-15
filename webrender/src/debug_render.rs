@@ -263,7 +263,7 @@ impl DebugRenderer {
 
         // Triangles
         if !self.tri_vertices.is_empty() {
-                self.color_program.bind(device, &projection, &self.tri_indices, &self.tri_vertices);
+                self.color_program.bind(device, &projection, &self.tri_indices, &self.tri_vertices, None);
                 self.color_program.draw(device);
         }
 
