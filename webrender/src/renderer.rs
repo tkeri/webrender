@@ -2038,7 +2038,7 @@ impl Renderer {
                 (&mut self.ps_composite as &mut BindDraw, GPU_TAG_PRIM_COMPOSITE)
             }
             BatchKind::HardwareComposite => {
-                (&mut self.ps_composite as &mut BindDraw, GPU_TAG_PRIM_COMPOSITE)
+                (&mut self.ps_hw_composite as &mut BindDraw, GPU_TAG_PRIM_COMPOSITE)
             }
             BatchKind::SplitComposite => {
                 (&mut self.ps_split_composite as &mut BindDraw, GPU_TAG_PRIM_SPLIT_COMPOSITE)
