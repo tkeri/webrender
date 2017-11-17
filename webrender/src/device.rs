@@ -323,8 +323,8 @@ impl Device {
     pub fn new(
         resource_override_path: Option<PathBuf>,
         mut params: DeviceInitParams,
-        _file_changed_handler: Box<FileWatcherHandler>)
-    -> Device {
+        _file_changed_handler: Box<FileWatcherHandler>,
+    ) -> Device {
         let max_texture_size = 1024;
         #[cfg(all(target_os = "windows", feature="dx11"))]
         let encoder = params.factory.create_command_buffer_native().into();

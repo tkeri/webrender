@@ -206,7 +206,7 @@ impl Example for App {
             Vec::new(),
         );
 
-        let image_mask_key = api.generate_image_key();
+        /*let image_mask_key = api.generate_image_key();
         resources.add_image(
             image_mask_key,
             ImageDescriptor::new(2, 2, ImageFormat::A8, true),
@@ -222,16 +222,16 @@ impl Example for App {
             (50, 50).to(150, 150),
             BorderRadius::uniform(20.0),
             ClipMode::Clip
-        );
-        let id = builder.define_clip(None, bounds, vec![complex], Some(mask));
-        builder.push_clip_id(id);
+        );*/
+        /*let id = builder.define_clip(None, bounds, vec![complex], Some(mask));
+        builder.push_clip_id(id);*/
 
         let info = LayoutPrimitiveInfo::new((100, 100).to(200, 200));
         builder.push_rect(&info, ColorF::new(0.0, 1.0, 0.0, 1.0));
 
         let info = LayoutPrimitiveInfo::new((250, 100).to(350, 200));
         builder.push_rect(&info, ColorF::new(0.0, 1.0, 0.0, 1.0));
-        let border_side = BorderSide {
+        /*let border_side = BorderSide {
             color: ColorF::new(0.0, 0.0, 1.0, 1.0),
             style: BorderStyle::Groove,
         };
@@ -251,7 +251,7 @@ impl Example for App {
 
         let info = LayoutPrimitiveInfo::new((100, 100).to(200, 200));
         builder.push_border(&info, border_widths, border_details);
-        builder.pop_clip_id();
+        builder.pop_clip_id();*/
 
         if false {
             // draw text?

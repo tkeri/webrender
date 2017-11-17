@@ -369,6 +369,6 @@ fn main() {
 
     let shader_map = write_shaders(glsl_files, &shaders_file);
     let _file_names = create_shaders(out_dir.clone(), &shader_map);
-    #[cfg(all(target_os = "windows", feature = "dx11"))]
-    compile_fx_files(_file_names, out_dir);
+    /*#[cfg(all(target_os = "windows", feature = "dx11"))]
+    compile_fx_files(_file_names, out_dir);*/
 }

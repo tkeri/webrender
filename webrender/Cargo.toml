@@ -7,7 +7,7 @@ repository = "https://github.com/servo/webrender"
 build = "build.rs"
 
 [features]
-default = ["freetype-lib"]
+default = ["freetype-lib", "dx11"]
 freetype-lib = ["freetype/servo-freetype-sys"]
 profiler = ["thread_profiler/thread_profiler"]
 debugger = ["ws", "serde_json", "serde", "serde_derive"]
@@ -36,13 +36,13 @@ serde = { optional = true, version = "1.0" }
 serde_derive = { optional = true, version = "1.0" }
 servo-glutin = "0.12"
 rand = "0.3"
-gfx = { git = 'https://github.com/gfx-rs/gfx', branch = 'pre-ll' }
-gfx_device_gl = { git = 'https://github.com/gfx-rs/gfx', branch = 'pre-ll' }
+gfx = { path = '../../gfx/src/render' }
+gfx_device_gl = { path = '../../gfx/src/backend/gl' }
 
 [target.'cfg(windows)'.dependencies]
-gfx_device_dx11 = { git = 'https://github.com/gfx-rs/gfx', branch = 'pre-ll', optional = true}
-gfx_window_dxgi = { git = 'https://github.com/gfx-rs/gfx', branch = 'pre-ll', optional = true}
-winit = "0.8"
+gfx_device_dx11 = { path = '../../gfx/src/backend/dx11', optional = true }
+gfx_window_dxgi = { path = '../../gfx/src/window/dxgi', optional = true }
+winit = { git = 'https://github.com/tomaka/winit', branch = 'master'}
 
 [dev-dependencies]
 angle = {git = "https://github.com/servo/angle", branch = "servo"}

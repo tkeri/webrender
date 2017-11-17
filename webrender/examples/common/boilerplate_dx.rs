@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::clone::Clone;
 use std::env;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -22,16 +23,23 @@ impl Notifier {
 }
 
 impl RenderNotifier for Notifier {
-    fn new_frame_ready(&mut self) {
+    fn clone(&self) -> Box<RenderNotifier> {
+        Box::new(Notifier {
+            proxy: (self.proxy).clone(),
+        })
+    }
+
+    fn new_frame_ready(&self) {
         #[cfg(not(target_os = "android"))]
         self.proxy.wakeup().unwrap();
     }
 
-    fn new_scroll_frame_ready(&mut self, _composite_needed: bool) {
+    fn new_scroll_frame_ready(&self, _composite_needed: bool) {
         #[cfg(not(target_os = "android"))]
         self.proxy.wakeup().unwrap();
     }
 }
+
 
 pub trait HandyDandyRectBuilder {
     fn to(&self, x2: i32, y2: i32) -> LayoutRect;
@@ -98,12 +106,10 @@ pub fn main_wrapper(example: &mut Example,
 
     let (window, mut device_init_params) = webrender::create_rgba8_window(winit_window);
     let size = DeviceUintSize::new(width, height);
-    let (mut renderer, sender) = webrender::Renderer::new(opts, device_init_params).unwrap();
+    let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
+    let (mut renderer, sender) = webrender::Renderer::new(notifier, opts, device_init_params).unwrap();
     let api = sender.create_api();
     let document_id = api.add_document(size);
-
-    let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
-    renderer.set_render_notifier(notifier);
 
     if let Some(external_image_handler) = example.get_external_image_handler() {
         renderer.set_external_image_handler(external_image_handler);
@@ -151,9 +157,9 @@ pub fn main_wrapper(example: &mut Example,
                     }
                 },
             } => {
-                let mut flags = renderer.get_debug_flags();
-                flags.toggle(webrender::PROFILER_DBG);
-                renderer.set_debug_flags(flags);
+                //let mut flags = renderer.get_debug_flags();
+                //flags.toggle(webrender::PROFILER_DBG);
+                //renderer.set_debug_flags(flags);
                 winit::ControlFlow::Continue
             },
 

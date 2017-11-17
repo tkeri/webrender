@@ -1178,7 +1178,7 @@ pub struct Renderer {
     // These are "cache shaders". These shaders are used to
     // draw intermediate results to cache targets. The results
     // of these shaders are then used by the primitive shaders.
-    cs_text_run: Box<Program>,
+    /*cs_text_run: Box<Program>,
     cs_line: Box<Program>,
     cs_blur_a8: Box<BlurProgram>,
     cs_blur_rgba8: Box<BlurProgram>,
@@ -1192,7 +1192,7 @@ pub struct Renderer {
     /// of these shaders are also used by the primitive shaders.
     cs_clip_rectangle: Box<ClipProgram>,
     cs_clip_image: Box<ClipProgram>,
-    cs_clip_border: Box<ClipProgram>,
+    cs_clip_border: Box<ClipProgram>,*/
 
     // The are "primitive shaders". These shaders draw and blend
     // final results on screen. They are aware of tile boundaries.
@@ -1202,7 +1202,7 @@ pub struct Renderer {
     // output, and the cache_image shader blits the results of
     // a cache shader (e.g. blur) to the screen.
     ps_rectangle: ProgramPair,
-    ps_rectangle_clip: ProgramPair,
+    /*ps_rectangle_clip: ProgramPair,
     ps_text_run: TextProgramPair,
     ps_image: ProgramPair,
     ps_yuv_image: Vec<ProgramPair>,
@@ -1218,7 +1218,7 @@ pub struct Renderer {
     ps_split_composite: Box<Program>,
     ps_composite: Box<Program>,
 
-    ps_clear: Box<DebugColorProgram>,
+    ps_clear: Box<DebugColorProgram>,*/
 
     max_texture_size: u32,
 
@@ -1327,7 +1327,7 @@ impl Renderer {
             Box::new(file_watch_handler),
         );
 
-        let cs_text_run = create_program(&mut device, "cs_text_run");
+        /*let cs_text_run = create_program(&mut device, "cs_text_run");
         let cs_line = create_program(&mut device, "cs_line");
 
         let cs_blur_a8 = create_blur_program(&mut device, "cs_blur_a8");
@@ -1339,10 +1339,10 @@ impl Renderer {
 
         let cs_clip_rectangle = create_clip_program(&mut device, "cs_clip_rectangle_transform");
         let cs_clip_image = create_clip_program(&mut device, "cs_clip_image_transform");
-        let cs_clip_border = create_clip_program(&mut device, "cs_clip_border_transform");
+        let cs_clip_border = create_clip_program(&mut device, "cs_clip_border_transform");*/
 
         let ps_rectangle = create_prim_programs(&mut device, "ps_rectangle");
-        let ps_rectangle_clip = create_prim_programs(&mut device, "ps_rectangle_clip");
+        /*let ps_rectangle_clip = create_prim_programs(&mut device, "ps_rectangle_clip");
         let ps_text_run = create_text_programs(&mut device, "ps_text_run");
         let ps_image = create_prim_programs(&mut device, "ps_image");
         let ps_yuv_image =
@@ -1373,7 +1373,7 @@ impl Renderer {
         let ps_hw_composite = create_program(&mut device, "ps_hardware_composite");
         let ps_split_composite = create_program(&mut device, "ps_split_composite");
         let ps_composite = create_program(&mut device, "ps_composite");
-        let ps_clear = create_clear_program(&mut device, "debug_color");
+        let ps_clear = create_clear_program(&mut device, "debug_color");*/
 
         let device_max_size = device.max_texture_size();
         // 512 is the minimum that the texture cache can work with.
@@ -1468,7 +1468,7 @@ impl Renderer {
             pending_texture_updates: Vec::new(),
             pending_gpu_cache_updates: Vec::new(),
             pending_shader_updates: Vec::new(),
-            cs_text_run,
+            /*cs_text_run,
             cs_line,
             cs_blur_a8,
             cs_blur_rgba8,
@@ -1477,9 +1477,9 @@ impl Renderer {
             brush_image_a8,
             cs_clip_rectangle,
             cs_clip_border,
-            cs_clip_image,
+            cs_clip_image,*/
             ps_rectangle,
-            ps_rectangle_clip,
+           /* ps_rectangle_clip,
             ps_text_run,
             ps_image,
             ps_yuv_image,
@@ -1493,7 +1493,7 @@ impl Renderer {
             ps_split_composite,
             ps_composite,
             ps_clear,
-            ps_line,
+            ps_line,*/
             debug: debug_renderer,
             debug_flags,
             enable_batcher: options.enable_batcher,
@@ -1899,7 +1899,7 @@ impl Renderer {
 
     fn flush(&mut self) {
         self.device.flush();
-        self.cs_text_run.reset_upload_offset();
+        /*self.cs_text_run.reset_upload_offset();
         self.cs_line.reset_upload_offset();
         self.cs_blur_a8.reset_upload_offset();
         self.cs_blur_rgba8.reset_upload_offset();
@@ -1908,9 +1908,9 @@ impl Renderer {
         self.brush_image_a8.reset_upload_offset();
         self.cs_clip_rectangle.reset_upload_offset();
         self.cs_clip_border.reset_upload_offset();
-        self.cs_clip_image.reset_upload_offset();
+        self.cs_clip_image.reset_upload_offset();*/
         self.ps_rectangle.reset_upload_offset();
-        self.ps_rectangle_clip.reset_upload_offset();
+        /*self.ps_rectangle_clip.reset_upload_offset();
         self.ps_text_run.reset_upload_offset();
         self.ps_image.reset_upload_offset();
         self.ps_border_corner.reset_upload_offset();
@@ -1925,7 +1925,7 @@ impl Renderer {
         self.ps_line.reset_upload_offset();
         for mut program in &mut self.ps_yuv_image {
             program.reset_upload_offset();
-        }
+        }*/
     }
 
     pub fn layers_are_bouncing_back(&self) -> bool {
@@ -2034,7 +2034,7 @@ impl Renderer {
         enable_depth_write: bool,
     ) {
         let (program, marker) = match key.kind {
-            BatchKind::Composite { .. } => {
+            /*BatchKind::Composite { .. } => {
                 (&mut self.ps_composite as &mut BindDraw, GPU_TAG_PRIM_COMPOSITE)
             }
             BatchKind::HardwareComposite => {
@@ -2062,7 +2062,7 @@ impl Renderer {
                         (shader  as &mut BindDraw, GPU_TAG_BRUSH_IMAGE)
                     }
                 }
-            }
+            }*/
             BatchKind::Transformable(transform_kind, batch_kind) => match batch_kind {
                 TransformBatchKind::Rectangle(needs_clipping) => {
                     debug_assert!(
@@ -2075,13 +2075,13 @@ impl Renderer {
                             BlendMode::None => false,
                         }
                     );
-                    if needs_clipping {
-                        (self.ps_rectangle_clip.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_RECT)
-                    } else {
+                    //if needs_clipping {
+                        //(self.ps_rectangle_clip.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_RECT)
+                    //} else {
                         (self.ps_rectangle.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_RECT)
-                    }
+                    //}
                 }
-                TransformBatchKind::Line => {
+                /*TransformBatchKind::Line => {
                     (self.ps_line.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_LINE)
                 }
                 TransformBatchKind::TextRun(..) => {
@@ -2111,8 +2111,10 @@ impl Renderer {
                 }
                 TransformBatchKind::RadialGradient => {
                     (self.ps_radial_gradient.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_RADIAL_GRADIENT)
-                }
+                }*/
+                _ => return
             },
+            _ => return
         };
 
         // Handle special case readback for composites.
@@ -2238,7 +2240,7 @@ impl Renderer {
         if !target.vertical_blurs.is_empty() || !target.horizontal_blurs.is_empty() {
             let _gm = self.gpu_profile.add_marker(GPU_TAG_BLUR);
             println!("cs_blur_rgba8");
-            if !target.vertical_blurs.is_empty() {
+            /*if !target.vertical_blurs.is_empty() {
                 self.cs_blur_rgba8.bind(&mut self.device, projection, &target.vertical_blurs, render_target, &mut self.renderer_errors, 0);
                 self.cs_blur_rgba8.draw(&mut self.device);
             }
@@ -2246,7 +2248,7 @@ impl Renderer {
             if !target.horizontal_blurs.is_empty() {
                 self.cs_blur_rgba8.bind(&mut self.device, projection, &target.horizontal_blurs, render_target, &mut self.renderer_errors, 0);
                 self.cs_blur_rgba8.draw(&mut self.device);
-            }
+            }*/
         }
 
         // Draw any textrun caches for this target. For now, this
@@ -2255,7 +2257,7 @@ impl Renderer {
         // considering using this for (some) other text runs, since
         // it removes the overhead of submitting many small glyphs
         // to multiple tiles in the normal text run case.
-        if !target.text_run_cache_prims.is_empty() {
+        /*if !target.text_run_cache_prims.is_empty() {
             let _gm = self.gpu_profile.add_marker(GPU_TAG_CACHE_TEXT_RUN);
             println!("cs_text_run");
 
@@ -2270,7 +2272,7 @@ impl Renderer {
             println!("cs_line");
             self.cs_line.bind(&mut self.device, projection, &target.line_cache_prims, render_target, &mut self.renderer_errors, 0);
             self.cs_line.draw(&mut self.device, &BlendMode::Alpha, false);
-        }
+        }*/
 
         //TODO: record the pixel count for cached primitives
 
@@ -2313,7 +2315,7 @@ impl Renderer {
                 }
 
                 match batch.key.kind {
-                    BatchKind::Transformable(transform_kind, TransformBatchKind::TextRun(glyph_format)) => {
+                    /*BatchKind::Transformable(transform_kind, TransformBatchKind::TextRun(glyph_format)) => {
                         // Text run batches are handled by this special case branch.
                         // In the case of subpixel text, we draw it as a two pass
                         // effect, to ensure we can apply clip masks correctly.
@@ -2392,7 +2394,7 @@ impl Renderer {
                                 unreachable!("bug: bad blend mode for text");
                             }
                         }
-                    }
+                    }*/
                     _ => {
                         /*if batch.key.blend_mode != prev_blend_mode {
                             match batch.key.blend_mode {
@@ -2520,7 +2522,7 @@ impl Renderer {
                 tri_vertices.push(DebugColorVertex::new(x1, y1, zero_color));
 
             }
-            if !tri_vertices.is_empty() {
+            /*if !tri_vertices.is_empty() {
                 self.ps_clear.bind(
                     &mut self.device,
                     projection,
@@ -2529,7 +2531,7 @@ impl Renderer {
                     Some(render_target),
                 );
                 self.ps_clear.draw(&mut self.device);
-            }
+            }*/
         }
 
         // Draw any blurs for this target.
@@ -2542,7 +2544,7 @@ impl Renderer {
             let _gm = self.gpu_profile.add_marker(GPU_TAG_BLUR);
             println!("cs_blur_a8");
 
-            if !target.vertical_blurs.is_empty() {
+            /*if !target.vertical_blurs.is_empty() {
                 self.cs_blur_a8.bind(&mut self.device, projection, &target.vertical_blurs, Some(render_target), &mut self.renderer_errors, 0);
                 self.cs_blur_a8.draw(&mut self.device);
             }
@@ -2550,16 +2552,16 @@ impl Renderer {
             if !target.horizontal_blurs.is_empty() {
                 self.cs_blur_a8.bind(&mut self.device, projection, &target.horizontal_blurs, Some(render_target), &mut self.renderer_errors, 0);
                 self.cs_blur_a8.draw(&mut self.device);
-            }
+            }*/
         }
 
-        if !target.rect_cache_prims.is_empty() {
+        /*if !target.rect_cache_prims.is_empty() {
             println!("brush_mask");
             let _gm = self.gpu_profile.add_marker(GPU_TAG_BRUSH_MASK);
             let shader = self.brush_mask.get(BlendMode::None);
             shader.bind(&mut self.device, projection, &target.rect_cache_prims, Some(render_target), &mut self.renderer_errors, 0);
             shader.draw(&mut self.device, &BlendMode::None);
-        }
+        }*/
 
 
         // Draw the clip items into the tiled alpha mask.
@@ -2569,7 +2571,7 @@ impl Renderer {
             // If we have border corner clips, the first step is to clear out the
             // area in the clip mask. This allows drawing multiple invididual clip
             // in regions below.
-            if !target.clip_batcher.border_clears.is_empty() {
+            /*if !target.clip_batcher.border_clears.is_empty() {
                 let _gm2 = GpuMarker::new("clip borders [clear]");
                 println!("cs_clip_border clears");
                 self.cs_clip_border.bind(&mut self.device, projection, &target.clip_batcher.border_clears, render_target.0, &mut self.renderer_errors, 0);
@@ -2588,13 +2590,13 @@ impl Renderer {
                 self.cs_clip_border.bind(&mut self.device, projection, &target.clip_batcher.borders, render_target.0, &mut self.renderer_errors, 0);
                 self.profile_counters.vertices.add(6 * &target.clip_batcher.borders.len());
                 self.cs_clip_border.draw(&mut self.device, &BlendMode::Max);
-            }
+            }*/
 
             // switch to multiplicative blending
             let blend_mode = BlendMode::Multiply;
 
             // draw rounded cornered rectangles
-            if !target.clip_batcher.rectangles.is_empty() {
+            /*if !target.clip_batcher.rectangles.is_empty() {
                 let _gm2 = GpuMarker::new("clip rectangles");
                 println!("clip rectangles");
                 self.cs_clip_rectangle.bind(&mut self.device, projection, &target.clip_batcher.rectangles, render_target.0, &mut self.renderer_errors, 0);
@@ -2610,7 +2612,7 @@ impl Renderer {
                 self.cs_clip_image.bind(&mut self.device, projection, &items, render_target.0, &mut self.renderer_errors, 0);
                 self.profile_counters.vertices.add(6 * &items.len());
                 self.cs_clip_image.draw(&mut self.device, &blend_mode);
-            }
+            }*/
         }
 
         self.gpu_profile.done_sampler();

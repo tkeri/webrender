@@ -184,36 +184,43 @@ impl Example for App {
               _pipeline_id: PipelineId,
               _document_id: DocumentId) {
         let bounds = LayoutRect::new(LayoutPoint::zero(), layout_size);
-        builder.push_stacking_context(ScrollPolicy::Scrollable,
-                                      bounds,
-                                      None,
-                                      TransformStyle::Flat,
-                                      None,
-                                      MixBlendMode::Normal,
-                                      Vec::new());
+        let info = LayoutPrimitiveInfo::new(bounds);
+        builder.push_stacking_context(
+            &info,
+            ScrollPolicy::Scrollable,
+            None,
+            TransformStyle::Flat,
+            None,
+            MixBlendMode::Normal,
+            Vec::new(),
+        );
 
-        let image_mask_key = api.generate_image_key();
+        /*let image_mask_key = api.generate_image_key();
         resources.add_image(
             image_mask_key,
             ImageDescriptor::new(2, 2, ImageFormat::A8, true),
             ImageData::new(vec![0, 80, 180, 255]),
-            None
+            None,
         );
         let mask = ImageMask {
             image: image_mask_key,
             rect: (75, 75).by(100, 100),
             repeat: false,
         };
-        let complex = ComplexClipRegion::new((50, 50).to(150, 150), BorderRadius::uniform(20.0));
-        let id = builder.define_clip(None, bounds, vec![complex], Some(mask));
-        builder.push_clip_id(id);
+        let complex = ComplexClipRegion::new(
+            (50, 50).to(150, 150),
+            BorderRadius::uniform(20.0),
+            ClipMode::Clip
+        );*/
+        /*let id = builder.define_clip(None, bounds, vec![complex], Some(mask));
+        builder.push_clip_id(id);*/
 
-        let bounds = (100, 100).to(200, 200);
-        builder.push_rect(bounds, None, ColorF::new(0.0, 1.0, 0.0, 1.0));
+        let info = LayoutPrimitiveInfo::new((100, 100).to(200, 200));
+        builder.push_rect(&info, ColorF::new(0.0, 1.0, 0.0, 1.0));
 
-        let bounds = (250, 100).to(350, 200);
-        builder.push_rect(bounds, None, ColorF::new(0.0, 1.0, 0.0, 1.0));
-        let border_side = BorderSide {
+        let info = LayoutPrimitiveInfo::new((250, 100).to(350, 200));
+        builder.push_rect(&info, ColorF::new(0.0, 1.0, 0.0, 1.0));
+        /*let border_side = BorderSide {
             color: ColorF::new(0.0, 0.0, 1.0, 1.0),
             style: BorderStyle::Groove,
         };
@@ -231,19 +238,20 @@ impl Example for App {
             radius: BorderRadius::uniform(20.0),
         });
 
-        let bounds = (100, 100).to(200, 200);
-        builder.push_border(bounds, None, border_widths, border_details);
+        let info = LayoutPrimitiveInfo::new((100, 100).to(200, 200));
+        builder.push_border(&info, border_widths, border_details);
+        builder.pop_clip_id();*/
 
-
-        if true { // draw text?
+        if false {
+            // draw text?
             let font_key = api.generate_font_key();
-            let font_bytes = load_file("res/FreeSans.ttf");
+            let font_bytes = load_file("../wrench/reftest/text/FreeSans.ttf");
             resources.add_raw_font(font_key, font_bytes, 0);
 
             let font_instance_key = api.generate_font_instance_key();
-            resources.add_font_instance(font_instance_key, font_key, Au::from_px(32), None, None);
+            resources.add_font_instance(font_instance_key, font_key, Au::from_px(32), None, None, Vec::new());
 
-            let text_bounds = (100, 200).by(700, 300);
+            let text_bounds = (100, 50).by(700, 200);
             let glyphs = vec![
                 GlyphInstance {
                     index: 48,
@@ -295,15 +303,18 @@ impl Example for App {
                 },
             ];
 
-            builder.push_text(text_bounds,
-                              None,
-                              &glyphs,
-                              font_instance_key,
-                              ColorF::new(1.0, 1.0, 0.0, 1.0),
-                              None);
+            let info = LayoutPrimitiveInfo::new(text_bounds);
+            builder.push_text(
+                &info,
+                &glyphs,
+                font_instance_key,
+                ColorF::new(1.0, 1.0, 0.0, 1.0),
+                None,
+            );
         }
 
-        if false { // draw box shadow?
+        if false {
+            // draw box shadow?
             let rect = LayoutRect::zero();
             let simple_box_bounds = (20, 200).by(50, 50);
             let offset = vec2(10.0, 10.0);
@@ -312,19 +323,20 @@ impl Example for App {
             let spread_radius = 0.0;
             let simple_border_radius = 8.0;
             let box_shadow_type = BoxShadowClipMode::Inset;
+            let info = LayoutPrimitiveInfo::with_clip_rect(rect, bounds);
 
-            builder.push_box_shadow(rect,
-                                    Some(LocalClip::from(bounds)),
-                                    simple_box_bounds,
-                                    offset,
-                                    color,
-                                    blur_radius,
-                                    spread_radius,
-                                    simple_border_radius,
-                                    box_shadow_type);
+            builder.push_box_shadow(
+                &info,
+                simple_box_bounds,
+                offset,
+                color,
+                blur_radius,
+                spread_radius,
+                BorderRadius::uniform(simple_border_radius),
+                box_shadow_type,
+            );
         }
 
-        builder.pop_clip_id();
         builder.pop_stacking_context();
     }
 
