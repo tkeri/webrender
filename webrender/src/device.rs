@@ -21,6 +21,69 @@ use api::{DeviceIntPoint, DeviceIntRect, DeviceIntSize, DeviceUintRect, DeviceUi
 use rand::Rng;
 use std;
 use gfx;
+use gfx::{buffer, command, device as d, image as i, memory as m, pass, pso, pool};
+use gfx::{Device as BackendDevice, Instance, QueueFamily, Surface, Swapchain};
+use gfx::{
+    DescriptorPool, Gpu, FrameSync, Primitive,
+    Backbuffer, SwapchainConfig,
+};
+use gfx::format::{ChannelType, Formatted, Srgba8 as ColorFormat, Swizzle, Vec2, Vec3, Vec4};
+use gfx::pass::Subpass;
+use gfx::pso::{PipelineStage, ShaderStageFlags};
+use gfx::queue::Submission;
+use winit;
+use back;
+
+const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
+    aspects: i::AspectFlags::COLOR,
+    levels: 0 .. 1,
+    layers: 0 .. 1,
+};
+
+const ENTRY_NAME: &str = "main";
+
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+struct Vertex {
+    aPosition: [f32; 3],
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+struct Locals {
+    uTransform: [[f32; 4]; 4],
+    uDevicePixelRatio: f32,
+    uMode: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+struct PrimitiveInstance {
+    aDataA: [i32; 4],
+    aDataB: [i32; 4],
+}
+
+/*const QUAD: [Vertex; 6] = [
+    Vertex { pos: [ -0.5, 0.5 ], color_in: [0.0, 1.0, 0.0, 1.0] },
+    Vertex { pos: [  0.5, 0.5 ], color_in: [1.0, 1.0, 0.0, 1.0] },
+    Vertex { pos: [  0.5,-0.5 ], color_in: [1.0, 0.0, 0.0, 1.0] },
+
+    Vertex { pos: [ -0.5, 0.5 ], color_in: [0.0, 1.0, 0.0, 1.0] },
+    Vertex { pos: [  0.5,-0.5 ], color_in: [1.0, 0.0, 0.0, 1.0] },
+    Vertex { pos: [ -0.5,-0.5 ], color_in: [0.0, 1.0, 0.0, 1.0] },
+];*/
+
+const QUAD: [Vertex; 6] = [
+    Vertex { aPosition: [  0.0, 0.0, 0.0  ] },
+    Vertex { aPosition: [  1.0, 0.0, 0.0  ] },
+    Vertex { aPosition: [  0.0,-1.0, 0.0  ] },
+    
+    Vertex { aPosition: [  0.0,-1.0, 0.0  ] },
+    Vertex { aPosition: [  1.0, 0.0, 0.0  ] },
+    Vertex { aPosition: [  1.0,-1.0, 0.0  ] },
+];
+
+/*use gfx;
 use gfx::CombinedError;
 use gfx::Factory;
 use gfx::texture::Kind;
@@ -30,28 +93,19 @@ use gfx::format::{Formatted, R8, Rgba8, Rgba32F, Srgba8, SurfaceTyped, TextureCh
 use gfx::format::{R8_G8_B8_A8, R32_G32_B32_A32};
 use gfx::handle::Sampler;
 use gfx::memory::Typed;
+use pipelines::{Position};*/
 use tiling::RenderTargetKind;
-use pipelines::{Position};
 use renderer::{BlendMode, MAX_VERTEX_TEXTURE_WIDTH, TextureSampler};
 
-use backend;
-use backend::Resources as R;
-#[cfg(all(target_os = "windows", feature="dx11"))]
-pub type CB = self::backend::CommandBuffer<backend::DeferredContext>;
-#[cfg(not(feature = "dx11"))]
-pub type CB = self::backend::CommandBuffer;
-
-#[cfg(all(target_os = "windows", feature="dx11"))]
-pub type BackendDevice = backend::Deferred;
-#[cfg(not(feature = "dx11"))]
-pub type BackendDevice = backend::Device;
+//use back;
 
 pub const LAYER_TEXTURE_WIDTH: usize = 1017;
 pub const RENDER_TASK_TEXTURE_WIDTH: usize = 1023;
 pub const TEXTURE_HEIGTH: usize = 8;
 pub const DEVICE_PIXEL_RATIO: f32 = 1.0;
 // We need this huge number for the large examples
-pub const MAX_INSTANCE_COUNT: usize = 12000;
+//pub const MAX_INSTANCE_COUNT: usize = 12000;
+pub const MAX_INSTANCE_COUNT: usize = 1024;
 
 pub const A_STRIDE: usize = 1;
 pub const RG_STRIDE: usize = 2;
@@ -65,7 +119,7 @@ pub const DUMMY_ID: TextureId = 0;
 //pub const DUMMY_RGBA8: TextureId = 1;
 const FIRST_UNRESERVED_ID: TextureId = DUMMY_ID + 1;
 
-pub type A8 = (R8, Unorm);
+//pub type A8 = (R8, Unorm);
 
 #[derive(Debug, Copy, Clone, PartialEq, Ord, Eq, PartialOrd)]
 pub struct FrameId(usize);
@@ -112,7 +166,7 @@ pub enum TextureFilter {
 }
 
 
-pub struct DataTexture<T> where T: gfx::format::TextureFormat {
+/*pub struct DataTexture<T> where T: gfx::format::TextureFormat {
     pub handle: gfx::handle::Texture<R, T::Surface>,
     pub srv: gfx::handle::ShaderResourceView<R, T::View>,
 }
@@ -257,7 +311,7 @@ impl<T> ImageTexture<T> where T: gfx::format::TextureFormat {
         let (w, h, _, _) = self.handle.get_info().kind.get_dimensions();
         (w as usize, h as usize)
     }
-}
+}*/
 
 pub struct Capabilities {
     pub supports_multisampling: bool,
@@ -273,11 +327,29 @@ pub struct BoundTextures {
     pub shared_cache_a8: (TextureId, TextureStorage),
 }
 
-pub struct Device {
-    pub device: BackendDevice,
-    pub factory: backend::Factory,
+/*pub struct RenderPass<B: gfx::Backend> {
+    pub handle: B::RenderPass,
+    attachments: Vec<String>,
+    subpasses: Vec<String>,
+}
+
+pub struct Resources<B: gfx::Backend> {
+    pub buffers: HashMap<String, (B::Buffer, B::Memory)>,
+    pub images: HashMap<String, Image<B>>,
+    pub image_views: HashMap<String, B::ImageView>,
+    pub render_passes: HashMap<String, RenderPass<B>>,
+    pub framebuffers: HashMap<String, (B::Framebuffer, gfx::device::Extent)>,
+    pub desc_set_layouts: HashMap<String, B::DescriptorSetLayout>,
+    pub desc_pools: HashMap<String, B::DescriptorPool>,
+    pub desc_sets: HashMap<String, B::DescriptorSet>,
+    pub pipeline_layouts: HashMap<String, B::PipelineLayout>,
+}*/
+
+pub struct Device<B: gfx::Backend> {
+    //adapter: gfx::Adapter<B>,
+    //gpu: gfx::Gpu<B>,
+    /*pub factory: backend::Factory,
     pub encoder: gfx::Encoder<R,CB>,
-    pub sampler: (Sampler<R>, Sampler<R>),
     pub dither: DataTexture<A8>,
     pub cache_a8_textures: HashMap<TextureId, CacheTexture<Rgba8>>,
     pub cache_rgba8_textures: HashMap<TextureId, CacheTexture<Rgba8>>,
@@ -289,7 +361,51 @@ pub struct Device {
     pub main_color: gfx::handle::RenderTargetView<R, ColorFormat>,
     pub main_depth: gfx::handle::DepthStencilView<R, DepthFormat>,
     pub vertex_buffer: gfx::handle::Buffer<R, Position>,
-    pub slice: gfx::Slice<R>,
+    pub slice: gfx::Slice<R>,*/
+
+    //pub resources: Resources<B>,
+    pub layers_image_upload_memory: B::Memory,
+    pub layers_image_upload_buffer: B::Buffer,
+    pub layers_image: B::Image,
+    pub layers_image_srv: B::ImageView,
+
+    pub render_tasks_image_upload_memory: B::Memory,
+    pub render_tasks_image_upload_buffer: B::Buffer,
+    pub render_tasks_image: B::Image,
+    pub render_tasks_image_srv: B::ImageView,
+
+    pub resource_cache_image_upload_memory: B::Memory,
+    pub resource_cache_image_upload_buffer: B::Buffer,
+    pub resource_cache_image: B::Image,
+    pub resource_cache_image_srv: B::ImageView,
+
+    pub sampler: (B::Sampler, B::Sampler),
+    pub device: B::Device,
+    pub queue_group: gfx::QueueGroup<B, gfx::queue::Graphics>,
+    pub command_pool: gfx::CommandPool<B, gfx::queue::Graphics>,
+    //pub upload_buffers: HashMap<String, (B::Buffer, B::Memory)>,
+    //pub download_type: gfx::MemoryType,
+
+    pub render_pass: B::RenderPass,
+    pub set_layout: B::DescriptorSetLayout,
+    pub pipeline_layout: B::PipelineLayout,
+    pub pipelines: Vec<Result<B::GraphicsPipeline, gfx::pso::CreationError>>,
+    pub desc_pool: B::DescriptorPool,
+    pub desc_sets: Vec<B::DescriptorSet>,
+    pub buffer_memory: B::Memory,
+    pub vertex_buffer: B::Buffer,
+    pub ibuffer_memory: B::Memory,
+    pub instance_buffer: B::Buffer,
+    pub lbuffer_memory: B::Memory,
+    pub locals_buffer: B::Buffer,
+    pub vs_module: B::ShaderModule,
+    pub fs_module: B::ShaderModule,
+    //pub frame_semaphore: B::Semaphore,
+    pub framebuffers: Vec<B::Framebuffer>,
+    pub frame_images: Vec<(B::Image, B::ImageView)>,
+    pub swap_chain: Box<B::Swapchain>,
+    pub viewport: command::Viewport,
+
     // Only used on dx11
     image_batch_set: HashSet<TextureId>,
 
@@ -313,20 +429,584 @@ pub struct Device {
 }
 
 pub struct DeviceInitParams {
-    pub device: BackendDevice,
+    //pub window: 
+    /*pub device: BackendDevice,
     pub factory: backend::Factory,
     pub main_color: gfx::handle::RenderTargetView<R, ColorFormat>,
-    pub main_depth: gfx::handle::DepthStencilView<R, DepthFormat>,
+    pub main_depth: gfx::handle::DepthStencilView<R, DepthFormat>,*/
 }
 
-impl Device {
+impl<B: gfx::Backend> Device<B> {
     pub fn new(
         resource_override_path: Option<PathBuf>,
-        mut params: DeviceInitParams,
+        window: &winit::Window,
+        instance: &back::Instance,
         _file_changed_handler: Box<FileWatcherHandler>)
-    -> Device {
+    -> Device<back::Backend> {
         let max_texture_size = 1024;
-        #[cfg(all(target_os = "windows", feature="dx11"))]
+
+        let window_size = window.get_inner_size_pixels().unwrap();
+        let pixel_width = window_size.0 as u16;
+        let pixel_height = window_size.1 as u16;
+
+        // instantiate backend
+        let mut surface = instance.create_surface(window);
+        let mut adapters = instance.enumerate_adapters();
+
+        for adapter in &adapters {
+            println!("{:?}", adapter.info);
+        }
+
+        let adapter = adapters.remove(0);
+        let surface_format = surface
+            .capabilities_and_formats(&adapter.physical_device)
+            .1
+            .into_iter()
+            .find(|format| format.1 == ChannelType::Srgb)
+            .unwrap();
+
+        /*let mut gpu = adapter
+            .open_with(|family| {
+                if family.supports_graphics() && surface.supports_queue_family(family) {
+                    Some(1)
+                } else {
+                    None
+                }
+            });*/
+        let Gpu { device, mut queue_groups, memory_types, .. } =
+            adapter.open_with(|family| {
+                if family.supports_graphics() {
+                    Some(1)
+                } else { None }
+            });
+
+        let mut queue_group = gfx::QueueGroup::<_, gfx::Graphics>::new(queue_groups.remove(0));
+        let mut command_pool = device.create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty(), 32);
+        command_pool.reset();
+        //let mut queue = queue_group.queues.remove(0);
+
+        println!("{:?}", surface_format);
+        let swap_config = SwapchainConfig::new()
+            .with_color(surface_format);
+        let (mut swap_chain, backbuffer) = surface.build_swapchain(swap_config, &queue_group.queues[0]);
+
+        let render_pass = {
+            let attachment = pass::Attachment {
+                format: surface_format,
+                ops: pass::AttachmentOps::new(pass::AttachmentLoadOp::Clear, pass::AttachmentStoreOp::Store),
+                stencil_ops: pass::AttachmentOps::DONT_CARE,
+                layouts: i::ImageLayout::Undefined .. i::ImageLayout::Present,
+            };
+
+            let subpass = pass::SubpassDesc {
+                colors: &[(0, i::ImageLayout::ColorAttachmentOptimal)],
+                depth_stencil: None,
+                inputs: &[],
+                preserves: &[],
+            };
+
+            let dependency = pass::SubpassDependency {
+                passes: pass::SubpassRef::External .. pass::SubpassRef::Pass(0),
+                stages: PipelineStage::COLOR_ATTACHMENT_OUTPUT .. PipelineStage::COLOR_ATTACHMENT_OUTPUT,
+                accesses: i::Access::empty() .. (i::Access::COLOR_ATTACHMENT_READ | i::Access::COLOR_ATTACHMENT_WRITE),
+            };
+
+            device.create_render_pass(&[attachment], &[subpass], &[dependency])
+        };
+
+        // Framebuffer and render target creation
+        let (frame_images, framebuffers) = match backbuffer {
+            Backbuffer::Images(images) => {
+                let extent = d::Extent { width: pixel_width as _, height: pixel_height as _, depth: 1 };
+                let pairs = images
+                    .into_iter()
+                    .map(|image| {
+                        let rtv = device.create_image_view(&image, surface_format, Swizzle::NO, COLOR_RANGE.clone()).unwrap();
+                        (image, rtv)
+                    })
+                    .collect::<Vec<_>>();
+                let fbos = pairs
+                    .iter()
+                    .map(|&(_, ref rtv)| {
+                        device.create_framebuffer(&render_pass, &[rtv], extent).unwrap()
+                    })
+                    .collect();
+                (pairs, fbos)
+            }
+            Backbuffer::Framebuffer(fbo) => {
+                (Vec::new(), vec![fbo])
+            }
+        };
+
+        // Setup renderpass and pipeline
+        #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
+        let vs_module = device
+            .create_shader_module(include_bytes!("../data/rect_vert.spv"))
+            .unwrap();
+        #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
+        let fs_module = device
+            .create_shader_module(include_bytes!("../data/rect_frag.spv"))
+            .unwrap();
+
+        let set_layout = device.create_descriptor_set_layout(&[
+                pso::DescriptorSetLayoutBinding { // Locals
+                    binding: 0,
+                    ty: pso::DescriptorType::UniformBuffer,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::VERTEX,
+                },
+                pso::DescriptorSetLayoutBinding { // tColor0
+                    binding: 3,
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // sColor0
+                    binding: 4,
+                    ty: pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // tCacheA8
+                    binding: 5,
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // sCacheA8
+                    binding: 6,
+                    ty: pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // tCacheRGBA8
+                    binding: 7,
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // sCacheRGBA8
+                    binding: 8,
+                    ty: pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // tSharedCacheA8
+                    binding: 9,
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // sSharedCacheA8
+                    binding: 10,
+                    ty: pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // tResourceCache
+                    binding: 11,
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // sResourceCache
+                    binding: 12,
+                    ty: pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // tLayers
+                    binding: 13,
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // sLayers
+                    binding: 14,
+                    ty: pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::ALL,
+                },
+                pso::DescriptorSetLayoutBinding { // tRenderTasks
+                    binding: 15,
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::VERTEX,
+                },
+                pso::DescriptorSetLayoutBinding { // sRenderTasks
+                    binding: 16,
+                    ty: pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::VERTEX,
+                },
+            ],
+        );
+
+        let pipeline_layout = device.create_pipeline_layout(&[&set_layout]);
+
+        let pipelines = {
+            let (vs_entry, fs_entry) = (
+                pso::EntryPoint::<back::Backend> { entry: ENTRY_NAME, module: &vs_module },
+                pso::EntryPoint::<back::Backend> { entry: ENTRY_NAME, module: &fs_module },
+            );
+
+            let shader_entries = pso::GraphicsShaderSet {
+                vertex: vs_entry,
+                hull: None,
+                domain: None,
+                geometry: None,
+                fragment: Some(fs_entry),
+            };
+
+            let subpass = Subpass { index: 0, main_pass: &render_pass };
+
+            let mut pipeline_desc = pso::GraphicsPipelineDesc::new(
+                shader_entries,
+                Primitive::TriangleList,
+                pso::Rasterizer::FILL,
+                &pipeline_layout,
+                subpass,
+            );
+            pipeline_desc.blender.targets.push(pso::ColorBlendDesc(
+                pso::ColorMask::ALL,
+                pso::BlendState::ALPHA,
+            ));
+            pipeline_desc.vertex_buffers.push(pso::VertexBufferDesc {
+                stride: std::mem::size_of::<Vertex>() as u32,
+                rate: 0, // VertexBuffer
+            });
+            pipeline_desc.vertex_buffers.push(pso::VertexBufferDesc {
+                stride: std::mem::size_of::<PrimitiveInstance>() as u32,
+                rate: 1, // InstanceBuffer
+            });
+
+            pipeline_desc.attributes.push(pso::AttributeDesc { // aPosition
+                location: 0,
+                binding: 0,
+                element: pso::Element {
+                    format: Vec3::<f32>::SELF,
+                    offset: 0,
+                },
+            });
+            pipeline_desc.attributes.push(pso::AttributeDesc { // aDataA
+                location: 4,
+                binding: 1,
+                element: pso::Element {
+                    format: Vec4::<i32>::SELF,
+                    offset: 0,
+                },
+            });
+            pipeline_desc.attributes.push(pso::AttributeDesc { // aDataB
+                location: 5,
+                binding: 1,
+                element: pso::Element {
+                    format: Vec4::<i32>::SELF,
+                    offset: 16,
+                },
+            });
+
+            device.create_graphics_pipelines(&[pipeline_desc])
+        };
+
+        println!("pipelines: {:?}", pipelines);
+
+        let mut desc_pool = device.create_descriptor_pool(
+            1, // sets
+            &[
+                pso::DescriptorRangeDesc {
+                    ty: pso::DescriptorType::UniformBuffer,
+                    count: 1,
+                },
+                pso::DescriptorRangeDesc {
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 7,
+                },
+                pso::DescriptorRangeDesc {
+                    ty: pso::DescriptorType::Sampler,
+                    count: 7,
+                },
+            ],
+        );
+
+        let desc_sets = desc_pool.allocate_sets(&[&set_layout]);
+
+        // Buffer allocations
+        println!("Memory types: {:?}", memory_types);
+
+        let buffer_stride = std::mem::size_of::<Vertex>() as u64;
+        let buffer_len = QUAD.len() as u64 * buffer_stride;
+
+        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::Usage::VERTEX).unwrap();
+        println!("{:?}", buffer_unbound);
+        let buffer_req = device.get_buffer_requirements(&buffer_unbound);
+        let upload_type =
+            memory_types.iter().find(|mem_type| {
+                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
+            }).unwrap();
+
+        let buffer_memory = device.allocate_memory(upload_type, buffer_req.size).unwrap();
+        let vertex_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
+
+        // TODO: check transitions: read/write mapping and vertex buffer read
+        {
+            let mut vertices = device
+                .acquire_mapping_writer::<Vertex>(&vertex_buffer, 0..buffer_len)
+                .unwrap();
+            vertices.copy_from_slice(&QUAD);
+            device.release_mapping_writer(vertices);
+        }
+
+        let ibuffer_stride = std::mem::size_of::<PrimitiveInstance>() as u64;
+        //let ibuffer_len = MAX_INSTANCE_COUNT * ibuffer_stride;
+        let ibuffer_len = 6 * ibuffer_stride;
+
+        let ibuffer_unbound = device.create_buffer(ibuffer_len, ibuffer_stride, buffer::Usage::VERTEX).unwrap();
+        println!("{:?}", ibuffer_unbound);
+        let ibuffer_req = device.get_buffer_requirements(&ibuffer_unbound);
+        let iupload_type =
+            memory_types.iter().find(|mem_type| {
+                ibuffer_req.type_mask & (1 << mem_type.id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
+            }).unwrap();
+
+        let ibuffer_memory = device.allocate_memory(iupload_type, ibuffer_req.size).unwrap();
+        let instance_buffer = device.bind_buffer_memory(&ibuffer_memory, 0, ibuffer_unbound).unwrap();
+
+        // TODO: check transitions: read/write mapping and vertex buffer read
+        {
+            let mut instances = device
+                .acquire_mapping_writer::<PrimitiveInstance>(&instance_buffer, 0..ibuffer_len)
+                .unwrap();
+            instances[0] = PrimitiveInstance {
+                aDataA: [1020, 0, 2147483647, 0],
+                aDataB: [0, 0, 0, 0],
+            };
+            instances[1] = PrimitiveInstance {
+                aDataA: [1020, 0, 2147483647, 0],
+                aDataB: [0, 0, 0, 0],
+            };
+            instances[2] = PrimitiveInstance {
+                aDataA: [1020, 0, 2147483647, 0],
+                aDataB: [0, 0, 0, 0],
+            };
+            instances[3] = PrimitiveInstance {
+                aDataA: [1020, 0, 2147483647, 0],
+                aDataB: [0, 0, 0, 0],
+            };
+            instances[4] = PrimitiveInstance {
+                aDataA: [1020, 0, 2147483647, 0],
+                aDataB: [0, 0, 0, 0],
+            };
+            instances[5] = PrimitiveInstance {
+                aDataA: [1020, 0, 2147483647, 0],
+                aDataB: [0, 0, 0, 0],
+            };
+            device.release_mapping_writer(instances);
+        }
+
+        let lbuffer_stride = std::mem::size_of::<Locals>() as u64;
+        let lbuffer_len = lbuffer_stride;
+        let lbuffer_unbound = device.create_buffer(lbuffer_len, lbuffer_stride, buffer::Usage::UNIFORM).unwrap();
+        let lbuffer_req = device.get_buffer_requirements(&lbuffer_unbound);
+        let mem_type =
+            memory_types.iter().find(|mem_type| {
+                lbuffer_req.type_mask & (1 << mem_type.id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
+            }).unwrap();
+
+        let lbuffer_memory = device.allocate_memory(mem_type, lbuffer_req.size).unwrap();
+        let locals_buffer = device.bind_buffer_memory(&lbuffer_memory, 0, lbuffer_unbound).unwrap();
+
+        // TODO: check transitions: read/write mapping and vertex buffer read
+        {
+            println!("{:?} {:?}", lbuffer_len, std::mem::size_of::<Locals>() as u64);
+            let mut locals = device
+                .acquire_mapping_writer::<Locals>(&locals_buffer, 0..lbuffer_len)
+                .unwrap();
+            /*let transform: [[f32; 4]; 4] = [
+                [0.00195, 0.0, -0.5, -1.0],
+                [0.0, 0.0026, 0.5, 1.0],
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.5, 1.0]];*/
+            let transform: [[f32; 4]; 4] = [
+                [0.00195, 0.00, 0.00, 0.00],
+                [0.00, 0.0026, 0.00, 0.00],
+                [-0.50, 0.50, 0.00, 0.50],
+                [-1.00, 1.00, 0.00, 1.00]];
+            locals[0] = Locals {
+                uMode: 0i32,
+                uTransform: transform.into(),
+                uDevicePixelRatio: DEVICE_PIXEL_RATIO,
+            };
+            device.release_mapping_writer(locals);
+        }
+
+        // Textures
+
+        let (width, height) = (LAYER_TEXTURE_WIDTH as u32, 64u32);
+        let kind = i::Kind::D2(width as i::Size, height as i::Size, i::AaMode::Single);
+        let row_alignment_mask = device.get_limits().min_buffer_copy_pitch_alignment as u32 - 1;
+        let image_stride = 4usize;
+        let row_pitch = (width * image_stride as u32 + row_alignment_mask) & !row_alignment_mask;
+        let upload_size = (height * row_pitch) as u64;
+        println!("upload row pitch {}, total size {}", row_pitch, upload_size);
+
+        let layers_image_upload_memory = device.allocate_memory(upload_type, upload_size).unwrap();
+        let layers_image_upload_buffer = {
+            let buffer = device.create_buffer(upload_size, image_stride as u64, buffer::Usage::TRANSFER_SRC).unwrap();
+            device.bind_buffer_memory(&layers_image_upload_memory, 0, buffer).unwrap()
+        };
+
+        let image_unbound = device.create_image(kind, 1, ColorFormat::SELF, i::Usage::TRANSFER_DST | i::Usage::SAMPLED).unwrap(); // TODO: usage
+        println!("{:?}", image_unbound);
+        let image_req = device.get_image_requirements(&image_unbound);
+
+        let device_type = memory_types
+            .iter()
+            .find(|memory_type| {
+                image_req.type_mask & (1 << memory_type.id) != 0 &&
+                memory_type.properties.contains(m::Properties::DEVICE_LOCAL)
+            })
+            .unwrap();
+        let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
+
+        let layers_image = device.bind_image_memory(&image_memory, 0, image_unbound).unwrap();
+        let layers_image_srv = device.create_image_view(&layers_image, ColorFormat::SELF, Swizzle::NO, COLOR_RANGE.clone()).unwrap();
+
+        let (width, height) = (max_texture_size as u32, max_texture_size as u32);
+        let kind = i::Kind::D2(width as i::Size, height as i::Size, i::AaMode::Single);
+        let row_alignment_mask = device.get_limits().min_buffer_copy_pitch_alignment as u32 - 1;
+        let image_stride = 4usize;
+        let row_pitch = (width * image_stride as u32 + row_alignment_mask) & !row_alignment_mask;
+        let upload_size = (height * row_pitch) as u64;
+        println!("upload row pitch {}, total size {}", row_pitch, upload_size);
+
+        let resource_cache_image_upload_memory = device.allocate_memory(upload_type, upload_size).unwrap();
+        let resource_cache_image_upload_buffer = {
+            let buffer = device.create_buffer(upload_size, image_stride as u64, buffer::Usage::TRANSFER_SRC).unwrap();
+            device.bind_buffer_memory(&resource_cache_image_upload_memory, 0, buffer).unwrap()
+        };
+
+        let image_unbound = device.create_image(kind, 1, ColorFormat::SELF, i::Usage::TRANSFER_DST | i::Usage::SAMPLED).unwrap(); // TODO: usage
+        println!("{:?}", image_unbound);
+        let image_req = device.get_image_requirements(&image_unbound);
+
+        let device_type = memory_types
+            .iter()
+            .find(|memory_type| {
+                image_req.type_mask & (1 << memory_type.id) != 0 &&
+                memory_type.properties.contains(m::Properties::DEVICE_LOCAL)
+            })
+            .unwrap();
+        let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
+
+        let resource_cache_image = device.bind_image_memory(&image_memory, 0, image_unbound).unwrap();
+        let resource_cache_image_srv = device.create_image_view(&resource_cache_image, ColorFormat::SELF, Swizzle::NO, COLOR_RANGE.clone()).unwrap();
+
+        let (width, height) = (RENDER_TASK_TEXTURE_WIDTH as u32, TEXTURE_HEIGTH as u32);
+        let kind = i::Kind::D2(width as i::Size, height as i::Size, i::AaMode::Single);
+        let row_alignment_mask = device.get_limits().min_buffer_copy_pitch_alignment as u32 - 1;
+        let image_stride = 4usize;
+        let row_pitch = (width * image_stride as u32 + row_alignment_mask) & !row_alignment_mask;
+        let upload_size = (height * row_pitch) as u64;
+        println!("upload row pitch {}, total size {}", row_pitch, upload_size);
+
+        let render_tasks_image_upload_memory = device.allocate_memory(upload_type, upload_size).unwrap();
+        let render_tasks_image_upload_buffer = {
+            let buffer = device.create_buffer(upload_size, image_stride as u64, buffer::Usage::TRANSFER_SRC).unwrap();
+            device.bind_buffer_memory(&render_tasks_image_upload_memory, 0, buffer).unwrap()
+        };
+
+        let image_unbound = device.create_image(kind, 1, ColorFormat::SELF, i::Usage::TRANSFER_DST | i::Usage::SAMPLED).unwrap(); // TODO: usage
+        println!("{:?}", image_unbound);
+        let image_req = device.get_image_requirements(&image_unbound);
+
+        let device_type = memory_types
+            .iter()
+            .find(|memory_type| {
+                image_req.type_mask & (1 << memory_type.id) != 0 &&
+                memory_type.properties.contains(m::Properties::DEVICE_LOCAL)
+            })
+            .unwrap();
+        let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
+
+        let render_tasks_image = device.bind_image_memory(&image_memory, 0, image_unbound).unwrap();
+        let render_tasks_image_srv = device.create_image_view(&render_tasks_image, ColorFormat::SELF, Swizzle::NO, COLOR_RANGE.clone()).unwrap();
+
+        // Samplers
+
+        let sampler_linear = device.create_sampler(
+            i::SamplerInfo::new(
+                i::FilterMethod::Bilinear,
+                i::WrapMode::Tile,
+            )
+        );
+
+        let sampler_nearest = device.create_sampler(
+            i::SamplerInfo::new(
+                i::FilterMethod::Scale,
+                i::WrapMode::Tile,
+            )
+        );
+
+        device.update_descriptor_sets(&[
+            pso::DescriptorSetWrite {
+                set: &desc_sets[0],
+                binding: 0,
+                array_offset: 0,
+                write: pso::DescriptorWrite::UniformBuffer(vec![
+                    (&locals_buffer, 0..std::mem::size_of::<Locals>() as u64),
+                ]),
+            },
+            pso::DescriptorSetWrite {
+                set: &desc_sets[0],
+                binding: 11,
+                array_offset: 0,
+                write: pso::DescriptorWrite::SampledImage(vec![(&resource_cache_image_srv, i::ImageLayout::Undefined)]),
+            },
+            pso::DescriptorSetWrite {
+                set: &desc_sets[0],
+                binding: 12,
+                array_offset: 0,
+                write: pso::DescriptorWrite::Sampler(vec![&sampler_nearest]),
+            },
+            pso::DescriptorSetWrite {
+                set: &desc_sets[0],
+                binding: 13,
+                array_offset: 0,
+                write: pso::DescriptorWrite::SampledImage(vec![(&layers_image_srv, i::ImageLayout::Undefined)]),
+            },
+            pso::DescriptorSetWrite {
+                set: &desc_sets[0],
+                binding: 14,
+                array_offset: 0,
+                write: pso::DescriptorWrite::Sampler(vec![&sampler_nearest]),
+            },
+            pso::DescriptorSetWrite {
+                set: &desc_sets[0],
+                binding: 15,
+                array_offset: 0,
+                write: pso::DescriptorWrite::SampledImage(vec![(&render_tasks_image_srv, i::ImageLayout::Undefined)]),
+            },
+            pso::DescriptorSetWrite {
+                set: &desc_sets[0],
+                binding: 16,
+                array_offset: 0,
+                write: pso::DescriptorWrite::Sampler(vec![&sampler_nearest]),
+            },
+        ]);
+
+        // Rendering setup
+        let viewport = command::Viewport {
+            rect: command::Rect {
+                x: 0, y: 0,
+                w: pixel_width, h: pixel_height,
+            },
+            depth: 0.0 .. 1.0,
+        };
+
+        /*#[cfg(all(target_os = "windows", feature="dx11"))]
         let encoder = params.factory.create_command_buffer_native().into();
 
         #[cfg(not(feature = "dx11"))]
@@ -383,13 +1063,15 @@ impl Device {
             cache_a8: (DUMMY_ID, TextureStorage::CacheA8),
             cache_rgba8: (DUMMY_ID, TextureStorage::CacheRGBA8),
             shared_cache_a8: (DUMMY_ID, TextureStorage::CacheA8),
-        };
+        };*/
 
         let dev = Device {
-            device: params.device,
-            factory: params.factory,
-            encoder: encoder,
+            //adapter: adapter,
+            //gpu: gpu,
+            device: device,
             sampler: (sampler_nearest, sampler_linear),
+            /*factory: params.factory,
+            encoder: encoder,
             dither: dither_tex,
             cache_a8_textures: cache_a8_textures,
             cache_rgba8_textures: cache_rgba8_textures,
@@ -397,13 +1079,43 @@ impl Device {
             bound_textures: bound_textures,
             //dummy_cache_a8: dummy_cache_a8_tex,
             //dummy_cache_rgba8: dummy_cache_rgba8_tex,
-            layers: layers_tex,
-            render_tasks: render_tasks_tex,
-            resource_cache: resource_cache_tex,
             main_color: params.main_color,
             main_depth: params.main_depth,
             vertex_buffer: vertex_buffer,
-            slice: slice,
+            slice: slice,*/
+            layers_image_upload_memory: layers_image_upload_memory,
+            layers_image_upload_buffer: layers_image_upload_buffer,
+            render_tasks_image_upload_memory: render_tasks_image_upload_memory,
+            render_tasks_image_upload_buffer: render_tasks_image_upload_buffer,
+            resource_cache_image_upload_memory: resource_cache_image_upload_memory,
+            resource_cache_image_upload_buffer: resource_cache_image_upload_buffer,
+            layers_image: layers_image,
+            layers_image_srv: layers_image_srv,
+            render_tasks_image: render_tasks_image,
+            render_tasks_image_srv: render_tasks_image_srv,
+            resource_cache_image: resource_cache_image,
+            resource_cache_image_srv: resource_cache_image_srv,
+            command_pool: command_pool,
+            queue_group: queue_group,
+            viewport: viewport,
+            render_pass: render_pass,
+            framebuffers: framebuffers,
+            frame_images: frame_images,
+            set_layout: set_layout,
+            desc_pool: desc_pool,
+            desc_sets: desc_sets,
+            pipeline_layout: pipeline_layout,
+            pipelines: pipelines,
+            buffer_memory: buffer_memory,
+            vertex_buffer: vertex_buffer,
+            ibuffer_memory: ibuffer_memory,
+            instance_buffer: instance_buffer,
+            lbuffer_memory: lbuffer_memory,
+            locals_buffer: locals_buffer,
+            swap_chain: Box::new(swap_chain),
+            //frame_semaphore: frame_semaphore,
+            vs_module: vs_module,
+            fs_module: fs_module,
             image_batch_set: HashSet::new(),
             resource_override_path,
             // This is initialized to 1 by default, but it is set
@@ -421,7 +1133,55 @@ impl Device {
         dev
     }
 
-    pub fn dither(&mut self) -> &DataTexture<A8> {
+    pub fn swap_buffers(&mut self) {
+        println!("swap_buffers");
+        let mut frame_semaphore = self.device.create_semaphore();
+        let mut frame_fence = self.device.create_fence(false); // TODO: remove
+        {
+            self.device.reset_fences(&[&frame_fence]);
+            self.command_pool.reset();
+            let frame = self.swap_chain.acquire_frame(FrameSync::Semaphore(&mut frame_semaphore));
+
+            // Rendering
+            let submit = {
+                let mut cmd_buffer = self.command_pool.acquire_command_buffer();
+
+                cmd_buffer.set_viewports(&[self.viewport.clone()]);
+                cmd_buffer.set_scissors(&[self.viewport.rect]);
+                cmd_buffer.bind_graphics_pipeline(&self.pipelines[0].as_ref().unwrap());
+                cmd_buffer.bind_vertex_buffers(pso::VertexBufferSet(vec![(&self.vertex_buffer, 0), (&self.instance_buffer, 0)]));
+                cmd_buffer.bind_graphics_descriptor_sets(&self.pipeline_layout, 0, &[&self.desc_sets[0]]);
+
+                {
+                    let mut encoder = cmd_buffer.begin_renderpass_inline(
+                        &self.render_pass,
+                        &self.framebuffers[frame.id()],
+                        self.viewport.rect,
+                        &[command::ClearValue::Color(command::ClearColor::Float([0.25, 0.25, 0.5, 1.0]))],
+                    );
+                    encoder.draw(0..6, 0..6);
+                }
+
+                cmd_buffer.finish()
+            };
+
+            let submission = Submission::new()
+                .wait_on(&[(&mut frame_semaphore, PipelineStage::BOTTOM_OF_PIPE)])
+                .submit(&[submit]);
+            self.queue_group.queues[0].submit(submission, Some(&mut frame_fence));
+
+            // TODO: replace with semaphore
+            self.device.wait_for_fences(&[&frame_fence], d::WaitFor::All, !0);
+
+            // present frame
+            self.swap_chain.present(&mut self.queue_group.queues[0], &[]);
+        }
+
+        self.device.destroy_fence(frame_fence);
+        self.device.destroy_semaphore(frame_semaphore);
+    }
+
+    /*pub fn dither(&mut self) -> &DataTexture<A8> {
         &self.dither
     }
 
@@ -480,11 +1240,11 @@ impl Device {
             TextureStorage::CacheRGBA8 => self.cache_rgba8_textures.get(&id).unwrap().rtv.clone(),
             TextureStorage::Image => unreachable!(),
         }
-    }
+    }*/
 
     pub fn read_pixels(&mut self, rect: DeviceUintRect, output: &mut [u8]) {
         // TODO add bgra flag
-        self.encoder.flush(&mut self.device);
+        /*self.encoder.flush(&mut self.device);
         let tex = self.main_color.raw().get_texture();
         let tex_info = tex.get_info().to_raw_image_info(gfx::format::ChannelType::Unorm, 0);
         let (w, h, _, _) = self.main_color.get_dimensions();
@@ -507,7 +1267,7 @@ impl Device {
                     output[offset + 3] = src[3];
                 }
             }
-        }
+        }*/
     }
 
     pub fn max_texture_size(&self) -> u32 {
@@ -534,7 +1294,7 @@ impl Device {
                         storage: TextureStorage) {
         debug_assert!(self.inside_frame);
 
-        match sampler {
+        /*match sampler {
             TextureSampler::Color0 => self.bound_textures.color0 = (texture, storage),
             TextureSampler::Color1 => self.bound_textures.color1 = (texture, storage),
             TextureSampler::Color2 => self.bound_textures.color2 = (texture, storage),
@@ -542,19 +1302,20 @@ impl Device {
             TextureSampler::CacheRGBA8 => self.bound_textures.cache_rgba8 = (texture, storage),
             TextureSampler::SharedCacheA8 => self.bound_textures.shared_cache_a8 = (texture, storage),
             _ => return
-        }
+        }*/
     }
 
     pub fn generate_texture_id(&mut self) -> TextureId {
         use rand::OsRng;
 
         let mut rng = OsRng::new().unwrap();
-        let mut texture_id = FIRST_UNRESERVED_ID;
-        while self.cache_a8_textures.contains_key(&texture_id) ||
+        //let mut texture_id = FIRST_UNRESERVED_ID;
+        let texture_id = rng.gen_range(FIRST_UNRESERVED_ID, u32::max_value());
+        /*while self.cache_a8_textures.contains_key(&texture_id) ||
               self.cache_rgba8_textures.contains_key(&texture_id) ||
               self.image_textures.contains_key(&texture_id) {
             texture_id = rng.gen_range(FIRST_UNRESERVED_ID, u32::max_value());
-        }
+        }*/
         texture_id
     }
 
@@ -562,7 +1323,7 @@ impl Device {
     {
         let id = self.generate_texture_id();
         println!("create_cache_texture={:?}", id);
-        match kind {
+        /*match kind {
             RenderTargetKind::Alpha => {
                 let tex = CacheTexture::create(&mut self.factory, [width as usize, height as usize]).unwrap();
                 self.cache_a8_textures.insert(id, tex);
@@ -571,15 +1332,15 @@ impl Device {
                 let tex = CacheTexture::create(&mut self.factory, [width as usize, height as usize]).unwrap();
                 self.cache_rgba8_textures.insert(id, tex);
             }
-        }
+        }*/
         id
     }
 
     pub fn create_image_texture(&mut self, width: u32, height: u32, layer_count: i32, filter: TextureFilter, format: ImageFormat) -> TextureId {
         let id = self.generate_texture_id();
-        println!("create_image_texture={:?}", id);
+        /*println!("create_image_texture={:?}", id);
         let tex = ImageTexture::create(&mut self.factory, [width as usize, height as usize], layer_count as u16, filter, format).unwrap();
-        self.image_textures.insert(id, tex);
+        self.image_textures.insert(id, tex);*/
         id
     }
 
@@ -587,8 +1348,8 @@ impl Device {
         debug_assert!(self.inside_frame);
     }
 
-    pub fn update_data_texture<T>(&mut self, sampler: TextureSampler, offset: [u16; 2], size: [u16; 2], memory: &[T]) where T: gfx::traits::Pod {
-        let img_info = gfx::texture::ImageInfoCommon {
+    pub fn update_data_texture<T>(&mut self, sampler: TextureSampler, offset: [u16; 2], size: [u16; 2], memory: &[T]) where T: gfx::memory::Pod {
+        /*let img_info = gfx::texture::ImageInfoCommon {
             xoffset: offset[0],
             yoffset: offset[1],
             zoffset: 0,
@@ -605,7 +1366,94 @@ impl Device {
             TextureSampler::RenderTasks => &self.render_tasks.handle,
             _=> unreachable!(),
         };
-        self.encoder.update_texture::<_, Rgba32F>(tex, None, img_info, gfx::memory::cast_slice(memory)).unwrap();
+        self.encoder.update_texture::<_, Rgba32F>(tex, None, img_info, gfx::memory::cast_slice(memory)).unwrap();*/
+        let buffer = match sampler {
+            TextureSampler::ResourceCache => &self.resource_cache_image_upload_buffer,
+            TextureSampler::Layers => &self.layers_image_upload_buffer,
+            TextureSampler::RenderTasks => &self.render_tasks_image_upload_buffer,
+            _=> unreachable!(),
+        };
+        let width: u32 = size[0] as u32;
+        let height: u32 = size[1] as u32;
+        let image_stride = 4 as usize;
+        let row_pitch: u32 = width * image_stride as u32;
+        {
+            let memory = gfx::memory::cast_slice(memory);
+            let mut data = self.device
+                .acquire_mapping_writer::<u8>(&buffer, 0..(height * row_pitch) as u64)
+                .unwrap();
+            for y in 0 .. height as usize {
+                let row = &(*memory)[y*(width as usize)*image_stride .. (y+1)*(width as usize)*image_stride];
+                let dest_base = y * row_pitch as usize;
+                data[dest_base .. dest_base + row.len()].copy_from_slice(row);
+            }
+            self.device.release_mapping_writer(data);
+        }
+
+        let image_upload_memory = match sampler {
+            TextureSampler::ResourceCache => &self.resource_cache_image_upload_memory,
+            TextureSampler::Layers => &self.layers_image_upload_memory,
+            TextureSampler::RenderTasks => &self.render_tasks_image_upload_memory,
+            _=> unreachable!(),
+        };
+
+        let image_memory = match sampler {
+            TextureSampler::ResourceCache => &self.resource_cache_image,
+            TextureSampler::Layers => &self.layers_image,
+            TextureSampler::RenderTasks => &self.render_tasks_image,
+            _=> unreachable!(),
+        };
+
+        let mut frame_fence = self.device.create_fence(false); // TODO: remove
+
+        // copy buffer to texture
+        {
+            let submit = {
+                let mut cmd_buffer = self.command_pool.acquire_command_buffer();
+
+                let image_barrier = m::Barrier::Image {
+                    states: (i::Access::empty(), i::ImageLayout::Undefined) ..
+                            (i::Access::TRANSFER_WRITE, i::ImageLayout::TransferDstOptimal),
+                    target: image_memory,
+                    range: COLOR_RANGE.clone(),
+                };
+                cmd_buffer.pipeline_barrier(PipelineStage::TOP_OF_PIPE .. PipelineStage::TRANSFER, &[image_barrier]);
+
+                cmd_buffer.copy_buffer_to_image(
+                    &buffer,
+                    &image_memory,
+                    i::ImageLayout::TransferDstOptimal,
+                    &[command::BufferImageCopy {
+                        buffer_offset: 0,
+                        buffer_row_pitch: row_pitch,
+                        buffer_slice_pitch: row_pitch * (height as u32),
+                        image_layers: i::SubresourceLayers {
+                            aspects: i::AspectFlags::COLOR,
+                            level: 0,
+                            layers: 0 .. 1,
+                        },
+                        image_offset: command::Offset { x: 0, y: 0, z: 0 },
+                        image_extent: d::Extent { width, height, depth: 1 },
+                    }]);
+
+                let image_barrier = m::Barrier::Image {
+                    states: (i::Access::TRANSFER_WRITE, i::ImageLayout::TransferDstOptimal) ..
+                            (i::Access::SHADER_READ, i::ImageLayout::ShaderReadOnlyOptimal),
+                    target: image_memory,
+                    range: COLOR_RANGE.clone(),
+                };
+                cmd_buffer.pipeline_barrier(PipelineStage::TRANSFER .. PipelineStage::BOTTOM_OF_PIPE, &[image_barrier]);
+
+                cmd_buffer.finish()
+            };
+
+            let submission = Submission::new()
+                .submit(&[submit]);
+            self.queue_group.queues[0].submit(submission, Some(&mut frame_fence));
+
+            self.device.wait_for_fences(&[&frame_fence], d::WaitFor::All, !0);
+        }
+        self.device.destroy_fence(frame_fence);
     }
 
     #[cfg(not(feature = "dx11"))]
@@ -621,7 +1469,7 @@ impl Device {
         offset: usize)
     {
         println!("update_image_data={:?}", texture_id);
-        let data = {
+        /*let data = {
             let texture = self.image_textures.get(texture_id).unwrap();
             match texture.format {
                 ImageFormat::A8 => convert_data_to_rgba8(width as usize, height as usize, pixels, A_STRIDE),
@@ -638,7 +1486,7 @@ impl Device {
                 _ => unimplemented!(),
             }
         };
-        self.update_image_texture(texture_id, [x0 as u16, y0 as u16], [width as u16, height as u16], data.as_slice(), layer_index);
+        self.update_image_texture(texture_id, [x0 as u16, y0 as u16], [width as u16, height as u16], data.as_slice(), layer_index);*/
     }
 
     #[cfg(all(target_os = "windows", feature="dx11"))]
@@ -654,7 +1502,7 @@ impl Device {
         offset: usize)
     {
         println!("update_image_data={:?}", texture_id);
-        let mut texture = self.image_textures.get_mut(texture_id).unwrap();
+        /*let mut texture = self.image_textures.get_mut(texture_id).unwrap();
         let data = {
             match texture.format {
                 ImageFormat::A8 => convert_data_to_rgba8(width as usize, height as usize, pixels, A_STRIDE),
@@ -673,11 +1521,11 @@ impl Device {
         };
         let data_pitch = texture.get_size().0 as usize * RGBA_STRIDE;
         batch_image_texture_data(&mut texture, x0 as usize, y0 as usize, width as usize, height as usize, data_pitch, data.as_slice());
-        self.image_batch_set.insert(texture_id.clone());
+        self.image_batch_set.insert(texture_id.clone());*/
     }
 
     pub fn update_image_texture(&mut self, texture_id: &TextureId, offset: [u16; 2], size: [u16; 2], memory: &[u8], layer_index: i32) {
-        let img_info = gfx::texture::ImageInfoCommon {
+        /*let img_info = gfx::texture::ImageInfoCommon {
             xoffset: offset[0],
             yoffset: offset[1],
             zoffset: layer_index as u16,
@@ -690,7 +1538,7 @@ impl Device {
 
         let data = gfx::memory::cast_slice(memory);
         let texture = self.image_textures.get(texture_id).unwrap();
-        self.encoder.update_texture::<_, Rgba8>(&texture.handle, None, img_info, data).unwrap();
+        self.encoder.update_texture::<_, Rgba8>(&texture.handle, None, img_info, data).unwrap();*/
     }
 
     pub fn end_frame(&mut self) {
@@ -704,7 +1552,7 @@ impl Device {
         src: Option<(&TextureId, i32)>, dst_id: &TextureId,
         src_rect: Option<DeviceIntRect>, dest_rect: DeviceIntRect)
     {
-        let src_tex = match src {
+        /*let src_tex = match src {
             Some((src_id, _)) => self.cache_rgba8_textures.get(&src_id).unwrap().handle.raw(),
             None => self.main_color.raw().get_texture(),
         };
@@ -750,40 +1598,40 @@ impl Device {
         println!("dst_id={:?} dst_info={:?}", dst_id, dst_info);
         self.encoder.copy_texture_to_texture_raw(
             &src_tex, None, src_info,
-            &dst_tex, None, dst_info).unwrap();
+            &dst_tex, None, dst_info).unwrap();*/
     }
 
     pub fn clear_target(&mut self,
                         color: Option<[f32; 4]>,
                         depth: Option<f32>) {
-        if let Some(color) = color {
+        /*if let Some(color) = color {
             self.encoder.clear(&self.main_color, [color[0], color[1], color[2], color[3]]);
         }
 
         if let Some(depth) = depth {
             self.encoder.clear_depth(&self.main_depth, depth);
-        }
+        }*/
     }
 
     pub fn clear_render_target_alpha(&mut self, texture_id: &TextureId, color: [f32; 4]) {
-        self.encoder.clear(&self.cache_a8_textures.get(texture_id).unwrap().rtv.clone(), color);
+        //self.encoder.clear(&self.cache_a8_textures.get(texture_id).unwrap().rtv.clone(), color);
     }
 
     pub fn clear_render_target_color(&mut self, texture_id: &TextureId, color: Option<[f32; 4]>, depth: f32) {
-        let tex = self.cache_rgba8_textures.get(texture_id).unwrap();
+        /*let tex = self.cache_rgba8_textures.get(texture_id).unwrap();
         if let Some(color) = color {
             self.encoder.clear(&tex.rtv.clone(), color);
         }
-        self.encoder.clear_depth(&tex.dsv.clone(), depth);
+        self.encoder.clear_depth(&tex.dsv.clone(), depth);*/
     }
 
     #[cfg(not(feature = "dx11"))]
     pub fn flush(&mut self) {
-        self.encoder.flush(&mut self.device);
+        //self.encoder.flush(&mut self.device);
     }
     #[cfg(all(target_os = "windows", feature="dx11"))]
     pub fn flush(&mut self) {
-        for texture_id in self.image_batch_set.clone() {
+        /*for texture_id in self.image_batch_set.clone() {
             println!("flush batched image {:?}", texture_id);
             let (width, height, data) = {
                 let texture = self.image_textures.get(&texture_id).expect("Didn't find texture!");
@@ -793,7 +1641,55 @@ impl Device {
             self.update_image_texture(&texture_id, [0, 0], [width as u16, height as u16], data.as_slice(), 0);
         }
         self.image_batch_set.clear();
-        self.encoder.flush(&mut self.device);
+        self.encoder.flush(&mut self.device);*/
+    }
+//}
+
+//impl<B: gfx::Backend> Drop for Device<B> {
+//    fn drop(&mut self) {
+    pub fn cleanup(&mut self) {
+        println!("Dropping!");
+        // cleanup!
+        //self.device.destroy_command_pool(self.command_pool.downgrade());
+        //let _ = &self.command_pool;
+        /*self.device.destroy_descriptor_pool(self.desc_pool);
+        self.device.destroy_descriptor_set_layout(self.set_layout);
+
+        #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal", feature = "gl"))]
+        {
+            self.device.destroy_shader_module(vs_module);
+            self.device.destroy_shader_module(fs_module);
+        }
+        #[cfg(all(feature = "metal", feature = "metal_argument_buffer"))]
+        self.device.destroy_shader_module(shader_lib);
+
+        self.device.destroy_buffer(self.image_upload_buffer);
+        self.device.destroy_image(self.image_logo);
+        self.device.destroy_image_view(self.image_srv);
+        self.device.destroy_sampler(self.sampler);
+        self.device.destroy_pipeline_layout(self.pipeline_layout);
+        self.device.free_memory(self.image_memory);
+        self.device.free_memory(self.image_upload_memory);*/
+        //self.device.destroy_semaphore(self.frame_semaphore);
+        //let _ = &self.frame_semaphore;
+        //self.device.destroy_buffer(self.vertex_buffer);
+        let _ = &self.vertex_buffer;
+        //self.device.free_memory(self.buffer_memory);
+        let _ = &self.buffer_memory;
+        //self.device.destroy_renderpass(self.render_pass);
+        let _ = &self.render_pass;
+        for pipeline in self.pipelines.drain(..) {
+            if let Ok(pipeline) = pipeline {
+                self.device.destroy_graphics_pipeline(pipeline);
+            }
+        }
+        for framebuffer in self.framebuffers.drain(..) {
+            self.device.destroy_framebuffer(framebuffer);
+        }
+        for (image, rtv) in self.frame_images.drain(..) {
+            self.device.destroy_image_view(rtv);
+            self.device.destroy_image(image);
+        }
     }
 }
 
@@ -826,7 +1722,7 @@ fn convert_data_to_bgra8(width: usize, height: usize, data_pitch: usize, data: &
     return new_data;
 }
 
-fn batch_image_texture_data(texture: &mut ImageTexture<Rgba8>,
+/*fn batch_image_texture_data(texture: &mut ImageTexture<Rgba8>,
     x_offset: usize, y_offset: usize,
     width: usize, height: usize,
     data_pitch: usize, new_data: &[u8])
@@ -845,7 +1741,7 @@ fn batch_image_texture_data(texture: &mut ImageTexture<Rgba8>,
             texture.data[offset + 3] = src[3];
         }
     }
-}
+}*/
 
 // Profiling stuff
 

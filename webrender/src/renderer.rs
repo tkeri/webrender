@@ -24,7 +24,7 @@ use debug_colors;
 use debug_render::DebugRenderer;
 #[cfg(feature = "debugger")]
 use debug_server::{self, DebugServer};
-use device::{BackendDevice, Device, DeviceInitParams, FrameId, VertexDescriptor, GpuMarker, GpuProfiler};
+use device::{/*BackendDevice,*/ Device, DeviceInitParams, FrameId, VertexDescriptor, GpuMarker, GpuProfiler};
 use device::{GpuTimer, TextureFilter, VertexUsageHint, TextureTarget, ShaderError,FileWatcherHandler};
 use device::{TextureSlot, TextureStorage, VertexAttribute, VertexAttributeKind};
 use device::{TextureId, DUMMY_ID};
@@ -36,7 +36,7 @@ use gpu_types::PrimitiveInstance;
 use internal_types::{BatchTextures, SourceTexture, ORTHO_FAR_PLANE, ORTHO_NEAR_PLANE};
 use internal_types::{CacheTextureId, FastHashMap, RendererFrame, ResultMsg, TextureUpdateOp};
 use internal_types::{DebugOutput, RenderTargetMode, TextureUpdateList, TextureUpdateSource};
-use pipelines::{BlurProgram, ClipProgram, DebugColorProgram, DebugFontProgram, Program, TextProgram};
+//use pipelines::{BlurProgram, ClipProgram, DebugColorProgram, DebugFontProgram, Program, TextProgram};
 use profiler::{BackendProfileCounters, Profiler};
 use profiler::{GpuProfileTag, RendererProfileCounters, RendererProfileTimers};
 use rayon::Configuration as ThreadPoolConfig;
@@ -65,10 +65,13 @@ use tiling::{BatchKey, BatchKind, BrushBatchKind, Frame, RenderTarget, Transform
 use time::precise_time_ns;
 use util::TransformedRectKind;
 
-use backend::{self, Resources as R};
+use gfx;
+use winit;
+use back;
+/*use backend::{self, Resources as R};
 use gfx;
 use gfx::format::{DepthStencil as DepthFormat, Rgba8 as ColorFormat};
-use window::ExistingWindow;
+use window::ExistingWindow;*/
 
 pub const MAX_VERTEX_TEXTURE_WIDTH: usize = 1024;
 
@@ -517,7 +520,7 @@ struct SourceTextureResolver {
 }
 
 impl SourceTextureResolver {
-    fn new(/*device: &mut Device*/) -> SourceTextureResolver {
+    fn new(/*device: &mut Device<back::Backend>*/) -> SourceTextureResolver {
         SourceTextureResolver {
             cache_texture_map: Vec::new(),
             //external_images: FastHashMap::default(),
@@ -528,7 +531,7 @@ impl SourceTextureResolver {
         }
     }
 
-    fn deinit(self, device: &mut Device) {
+    fn deinit(self, device: &mut Device<back::Backend>) {
         //device.delete_texture(self.dummy_cache_texture);
 
         /*for texture in self.cache_texture_map {
@@ -566,7 +569,7 @@ impl SourceTextureResolver {
     }
 
     // Bind a source texture to the device.
-    fn bind(&self, texture_id: &SourceTexture, sampler: TextureSampler, device: &mut Device) {
+    fn bind(&self, texture_id: &SourceTexture, sampler: TextureSampler, device: &mut Device<back::Backend>) {
         match *texture_id {
             SourceTexture::Invalid => {}
             SourceTexture::CacheA8 => {
@@ -646,7 +649,7 @@ struct CacheTexture {
 }
 
 impl CacheTexture {
-    fn new(device: &mut Device) -> CacheTexture {
+    fn new(device: &mut Device<back::Backend>) -> CacheTexture {
         CacheTexture {
             rows: Vec::new(),
             cpu_blocks: Vec::new(),
@@ -685,7 +688,7 @@ impl CacheTexture {
         }
     }
 
-    fn update(&mut self, device: &mut Device, updates: &GpuCacheUpdateList) {
+    fn update(&mut self, device: &mut Device<back::Backend>, updates: &GpuCacheUpdateList) {
         // See if we need to create or resize the texture.
         //let current_dimensions = self.texture.get_dimensions();
         /*if updates.height > current_dimensions.height {
@@ -719,10 +722,10 @@ impl CacheTexture {
         }
     }
 
-    #[cfg(all(target_os = "windows", feature="dx11"))]
-    fn flush(&mut self, device: &mut Device) {
-        let is_dirty = self.rows.iter().any(|r| r.is_dirty);
-        if is_dirty {
+    //#[cfg(all(target_os = "windows", feature="dx11"))]
+    fn flush(&mut self, device: &mut Device<back::Backend>) {
+        //let is_dirty = self.rows.iter().any(|r| r.is_dirty);
+        //if is_dirty {
             let cpu_blocks = &self.cpu_blocks[..];
 
             device.update_data_texture(TextureSampler::ResourceCache, [0, 0], [MAX_VERTEX_TEXTURE_WIDTH as u16, self.rows.len() as u16], cpu_blocks);
@@ -730,11 +733,11 @@ impl CacheTexture {
             for row in self.rows.iter_mut() {
                 row.is_dirty = false;
             }
-        }
+        //}
     }
 
-    #[cfg(not(feature = "dx11"))]
-    fn flush(&mut self, device: &mut Device) {
+    /*#[cfg(not(feature = "dx11"))]
+    fn flush(&mut self, device: &mut Device<back::Backend>) {
         for (row_index, row) in self.rows.iter_mut().enumerate() {
             if row.is_dirty {
                 let block_index = row_index * MAX_VERTEX_TEXTURE_WIDTH;
@@ -771,7 +774,7 @@ impl CacheTexture {
                 row.is_dirty = false;
             }
         }
-    }
+    }*/
 }
 
 struct VertexDataTexture {
@@ -785,8 +788,8 @@ impl VertexDataTexture {
         }
     }
 
-    fn update<T>(&mut self, device: &mut Device, data: &mut Vec<T>)
-        where T: gfx::traits::Pod
+    fn update<T>(&mut self, device: &mut Device<back::Backend>, data: &mut Vec<T>)
+        where T: gfx::memory::Pod
     {
         if data.is_empty() {
             return;
@@ -849,7 +852,7 @@ impl FileWatcherHandler for FileWatcher {
     }
 }
 
-#[derive(Debug)]
+/*#[derive(Debug)]
 struct ProgramPair((Box<Program>, Box<Program>));
 
 impl ProgramPair {
@@ -880,7 +883,7 @@ impl ProgramPair {
 
     pub fn bind(
         &mut self,
-        device: &mut Device,
+        device: &mut Device<back::Backend>,
         transform_kind: TransformedRectKind,
         projection: &Transform3D<f32>,
         instances: &[PrimitiveInstance],
@@ -909,7 +912,7 @@ impl TextProgramPair {
 
     pub fn bind(
         &mut self,
-        device: &mut Device,
+        device: &mut Device<back::Backend>,
         transform_kind: TransformedRectKind,
         projection: &Transform3D<f32>,
         instances: &[PrimitiveInstance],
@@ -919,111 +922,111 @@ impl TextProgramPair {
     ) {
         self.get(transform_kind).bind(device, projection, instances, render_target, renderer_errors, mode);
     }
-}
+}*/
 
 
 
-fn create_prim_programs(device: &mut Device, filename: &str) -> ProgramPair {
+/*fn create_prim_programs(device: &mut Device<back::Backend>, filename: &str) -> ProgramPair {
     let program = create_program(device, filename);
     filename.to_owned().push_str("_transform");
     ProgramPair((program, create_program(device, filename)))
 }
 
-fn create_brush_programs(device: &mut Device, filename: &str) -> ProgramPair {
+fn create_brush_programs(device: &mut Device<back::Backend>, filename: &str) -> ProgramPair {
     let program = create_program(device, filename);
     filename.to_owned().push_str("_alpha_pass");
     ProgramPair((program, create_program(device, filename)))
 }
 
 #[cfg(not(feature = "dx11"))]
-fn create_program(device: &mut Device, filename: &str) -> Box<Program> {
+fn create_program(device: &mut Device<back::Backend>, filename: &str) -> Box<Program> {
     let vs = get_shader_source(filename, ".vert");
     let ps = get_shader_source(filename, ".frag");
     Box::new(device.create_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(all(target_os = "windows", feature="dx11"))]
-fn create_program(device: &mut Device, filename: &str) -> Box<Program> {
+fn create_program(device: &mut Device<back::Backend>, filename: &str) -> Box<Program> {
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     Box::new(device.create_program(vs.as_slice(), ps.as_slice()))
 }
 
-fn create_text_programs(device: &mut Device, filename: &str) -> TextProgramPair {
+fn create_text_programs(device: &mut Device<back::Backend>, filename: &str) -> TextProgramPair {
     let program = create_text_program(device, filename);
     filename.to_owned().push_str("_transform");
     TextProgramPair((program, create_text_program(device, filename)))
 }
 
 #[cfg(not(feature = "dx11"))]
-fn create_text_program(device: &mut Device, filename: &str) -> Box<TextProgram> {
+fn create_text_program(device: &mut Device<back::Backend>, filename: &str) -> Box<TextProgram> {
     let vs = get_shader_source(filename, ".vert");
     let ps = get_shader_source(filename, ".frag");
     Box::new(device.create_text_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(all(target_os = "windows", feature="dx11"))]
-fn create_text_program(device: &mut Device, filename: &str) -> Box<TextProgram> {
+fn create_text_program(device: &mut Device<back::Backend>, filename: &str) -> Box<TextProgram> {
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     Box::new(device.create_text_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(not(feature = "dx11"))]
-fn create_clip_program(device: &mut Device, filename: &str) -> Box<ClipProgram> {
+fn create_clip_program(device: &mut Device<back::Backend>, filename: &str) -> Box<ClipProgram> {
     let vs = get_shader_source(filename, ".vert");
     let ps = get_shader_source(filename, ".frag");
     Box::new(device.create_clip_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(all(target_os = "windows", feature="dx11"))]
-fn create_clip_program(device: &mut Device, filename: &str) -> Box<ClipProgram> {
+fn create_clip_program(device: &mut Device<back::Backend>, filename: &str) -> Box<ClipProgram> {
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     Box::new(device.create_clip_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(not(feature = "dx11"))]
-fn create_blur_program(device: &mut Device, filename: &str) -> Box<BlurProgram> {
+fn create_blur_program(device: &mut Device<back::Backend>, filename: &str) -> Box<BlurProgram> {
     let vs = get_shader_source(filename, ".vert");
     let ps = get_shader_source(filename, ".frag");
     Box::new(device.create_blur_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(all(target_os = "windows", feature="dx11"))]
-fn create_blur_program(device: &mut Device, filename: &str) -> Box<BlurProgram> {
+fn create_blur_program(device: &mut Device<back::Backend>, filename: &str) -> Box<BlurProgram> {
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     Box::new(device.create_blur_program(vs.as_slice(), ps.as_slice()))
 }
 
 #[cfg(not(feature = "dx11"))]
-pub fn create_debug_color_program(device: &mut Device, filename: &str) -> DebugColorProgram {
+pub fn create_debug_color_program(device: &mut Device<back::Backend>, filename: &str) -> DebugColorProgram {
     let vs = get_shader_source(filename, ".vert");
     let ps = get_shader_source(filename, ".frag");
     device.create_debug_color_program(vs.as_slice(), ps.as_slice())
 }
 
 #[cfg(all(target_os = "windows", feature="dx11"))]
-pub fn create_debug_color_program(device: &mut Device, filename: &str) -> DebugColorProgram {
+pub fn create_debug_color_program(device: &mut Device<back::Backend>, filename: &str) -> DebugColorProgram {
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     device.create_debug_color_program(vs.as_slice(), ps.as_slice())
 }
 
 #[cfg(not(feature = "dx11"))]
-pub fn create_debug_font_program(device: &mut Device, filename: &str) -> DebugFontProgram {
+pub fn create_debug_font_program(device: &mut Device<back::Backend>, filename: &str) -> DebugFontProgram {
     let vs = get_shader_source(filename, ".vert");
     let ps = get_shader_source(filename, ".frag");
     device.create_debug_font_program(vs.as_slice(), ps.as_slice())
 }
 
  #[cfg(all(target_os = "windows", feature="dx11"))]
-pub fn create_debug_font_program(device: &mut Device, filename: &str) -> DebugFontProgram {
+pub fn create_debug_font_program(device: &mut Device<back::Backend>, filename: &str) -> DebugFontProgram {
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     device.create_debug_font_program(vs.as_slice(), ps.as_slice())
- }
+ }*/
 
 fn get_shader_source(filename: &str, extension: &str) -> Vec<u8> {
     use std::io::Read;
@@ -1071,7 +1074,7 @@ struct FrameOutput {
 pub struct Renderer {
     result_rx: Receiver<ResultMsg>,
     debug_server: DebugServer,
-    device: Device,
+    device: Device<back::Backend>,
     pending_texture_updates: Vec<TextureUpdateList>,
     pending_gpu_cache_updates: Vec<GpuCacheUpdateList>,
     pending_shader_updates: Vec<PathBuf>,
@@ -1080,7 +1083,7 @@ pub struct Renderer {
     // These are "cache shaders". These shaders are used to
     // draw intermediate results to cache targets. The results
     // of these shaders are then used by the primitive shaders.
-    cs_text_run: Box<Program>,
+    /*cs_text_run: Box<Program>,
     cs_line: Box<Program>,
     cs_blur_a8: Box<BlurProgram>,
     cs_blur_rgba8: Box<BlurProgram>,
@@ -1094,7 +1097,7 @@ pub struct Renderer {
     /// of these shaders are also used by the primitive shaders.
     cs_clip_rectangle: Box<ClipProgram>,
     cs_clip_image: Box<ClipProgram>,
-    cs_clip_border: Box<ClipProgram>,
+    cs_clip_border: Box<ClipProgram>,*/
 
     // The are "primitive shaders". These shaders draw and blend
     // final results on screen. They are aware of tile boundaries.
@@ -1103,7 +1106,7 @@ pub struct Renderer {
     // shadow primitive shader stretches the box shadow cache
     // output, and the cache_image shader blits the results of
     // a cache shader (e.g. blur) to the screen.
-    ps_rectangle: ProgramPair,
+    /*ps_rectangle: ProgramPair,
     ps_rectangle_clip: ProgramPair,
     ps_text_run: TextProgramPair,
     ps_image: ProgramPair,
@@ -1118,7 +1121,7 @@ pub struct Renderer {
     ps_blend: Box<Program>,
     ps_hw_composite: Box<Program>,
     ps_split_composite: Box<Program>,
-    ps_composite: Box<Program>,
+    ps_composite: Box<Program>,*/
 
     max_texture_size: u32,
 
@@ -1208,7 +1211,10 @@ impl Renderer {
     pub fn new(
         notifier: Box<RenderNotifier>,
         mut options: RendererOptions,
-        mut params: DeviceInitParams,
+        mut window: &winit::Window,
+        instance: &back::Instance,
+        //adapter: &gfx::Adapter<back::Backend>,
+        //surface: gfx::Surface<back::Backend>,
     ) -> Result<(Renderer, RenderApiSender), RendererError> {
         let (api_tx, api_rx) = try!{ channel::msg_channel() };
         let (payload_tx, payload_rx) = try!{ channel::payload_channel() };
@@ -1221,13 +1227,16 @@ impl Renderer {
             notifier: notifier.clone(),
         };
 
-        let mut device = Device::new(
+        let mut device = Device::<back::Backend>::new(
             options.resource_override_path.clone(),
-            params,
+            window,
+            instance,
+            //adapter,
+            //surface,
             Box::new(file_watch_handler),
         );
 
-        let cs_text_run = create_program(&mut device, "cs_text_run");
+        /*let cs_text_run = create_program(&mut device, "cs_text_run");
         let cs_line = create_program(&mut device, "cs_line");
 
         let cs_blur_a8 = create_blur_program(&mut device, "cs_blur_a8");
@@ -1272,7 +1281,7 @@ impl Renderer {
         let ps_blend = create_program(&mut device, "ps_blend");
         let ps_hw_composite = create_program(&mut device, "ps_hardware_composite");
         let ps_split_composite = create_program(&mut device, "ps_split_composite");
-        let ps_composite = create_program(&mut device, "ps_composite");
+        let ps_composite = create_program(&mut device, "ps_composite");*/
 
         let device_max_size = device.max_texture_size();
         // 512 is the minimum that the texture cache can work with.
@@ -1281,7 +1290,7 @@ impl Renderer {
         let min_texture_size = 512;
         if device_max_size < min_texture_size {
             println!(
-                "Device reporting insufficient max texture size ({})",
+                "Device<back::Backend> reporting insufficient max texture size ({})",
                 device_max_size
             );
             return Err(RendererError::MaxTextureSize);
@@ -1367,7 +1376,7 @@ impl Renderer {
             pending_texture_updates: Vec::new(),
             pending_gpu_cache_updates: Vec::new(),
             pending_shader_updates: Vec::new(),
-            cs_text_run,
+            /*cs_text_run,
             cs_line,
             cs_blur_a8,
             cs_blur_rgba8,
@@ -1391,7 +1400,7 @@ impl Renderer {
             ps_hw_composite,
             ps_split_composite,
             ps_composite,
-            ps_line,
+            ps_line,*/
             debug: debug_renderer,
             debug_flags,
             enable_batcher: options.enable_batcher,
@@ -1795,9 +1804,14 @@ impl Renderer {
         Ok(())
     }
 
+    pub fn swap_buffers(&mut self) {
+        profile_scope!("swap_buffers");
+        self.device.swap_buffers();
+    }
+
     fn flush(&mut self) {
         self.device.flush();
-        self.cs_text_run.reset_upload_offset();
+        /*self.cs_text_run.reset_upload_offset();
         self.cs_line.reset_upload_offset();
         self.cs_blur_a8.reset_upload_offset();
         self.cs_blur_rgba8.reset_upload_offset();
@@ -1823,7 +1837,7 @@ impl Renderer {
         self.ps_line.reset_upload_offset();
         for mut program in &mut self.ps_yuv_image {
             program.reset_upload_offset();
-        }
+        }*/
     }
 
     pub fn layers_are_bouncing_back(&self) -> bool {
@@ -1931,7 +1945,7 @@ impl Renderer {
         target_dimensions: DeviceUintSize,
         enable_depth_write: bool,
     ) {
-        let (program, marker) = match key.kind {
+        /*let (program, marker) = match key.kind {
             BatchKind::Composite { .. } => {
                 (&mut self.ps_composite, GPU_TAG_PRIM_COMPOSITE)
             }
@@ -2087,7 +2101,7 @@ impl Renderer {
         let mode = 0;
         program.bind(&mut self.device, projection, instances, render_target, &mut self.renderer_errors, mode);
         self.profile_counters.vertices.add(6 * instances.len());
-        program.draw(&mut self.device, &key.blend_mode, enable_depth_write);
+        program.draw(&mut self.device, &key.blend_mode, enable_depth_write);*/
 }
 
     fn draw_color_target(
@@ -2099,7 +2113,7 @@ impl Renderer {
         render_tasks: &RenderTaskTree,
         projection: &Transform3D<f32>,
     ) {
-        {
+        /*{
             let _gm = self.gpu_profile.add_marker(GPU_TAG_SETUP_TARGET);
             match render_target {
                 /*Some(..) if self.enable_clear_scissor => {
@@ -2362,7 +2376,7 @@ impl Renderer {
                 device.blit_render_target(src_rect, dest_rect);
                 handler.unlock(output.pipeline_id);
             }
-        }*/
+        }*/*/
     }
 
     fn draw_alpha_target(
@@ -2373,7 +2387,7 @@ impl Renderer {
         projection: &Transform3D<f32>,
         render_tasks: &RenderTaskTree,
     ) {
-        self.gpu_profile.add_sampler(GPU_SAMPLER_TAG_ALPHA);
+        /*self.gpu_profile.add_sampler(GPU_SAMPLER_TAG_ALPHA);
 
         {
             let _gm = self.gpu_profile.add_marker(GPU_TAG_SETUP_TARGET);
@@ -2476,7 +2490,7 @@ impl Renderer {
             }
         }
 
-        self.gpu_profile.done_sampler();
+        self.gpu_profile.done_sampler();*/
     }
 
     fn update_deferred_resolves(&mut self, frame: &mut Frame) {
@@ -2880,8 +2894,15 @@ impl Renderer {
         self.texture_resolver.deinit(&mut self.device);
         self.debug.deinit(&mut self.device);
         self.device.end_frame();
+        self.device.cleanup();
     }
 }
+
+/*impl Drop for Renderer {
+    fn drop(&mut self) {
+        self.device.cleanup();
+    }
+}*/
 
 pub enum ExternalImageSource<'a> {
     RawData(&'a [u8]),  // raw buffers.

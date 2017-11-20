@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{ColorF, ColorU};
+use back;
 use debug_render::DebugRenderer;
 use device::{Device, GpuMarker, GpuSampler, GpuTimer, NamedTag};
 use euclid::{Point2D, Rect, Size2D, vec2};
@@ -792,7 +793,7 @@ impl Profiler {
 
     pub fn draw_profile(
         &mut self,
-        device: &mut Device,
+        device: &mut Device<back::Backend>,
         frame_profile: &FrameProfileCounters,
         backend_profile: &BackendProfileCounters,
         renderer_profile: &RendererProfileCounters,

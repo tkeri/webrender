@@ -273,7 +273,7 @@ pub struct BlurTask {
     pub color: ColorF,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct RenderTaskData {
     pub data: [f32; FLOATS_PER_RENDER_TASK_INFO],
 }

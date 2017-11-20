@@ -233,7 +233,7 @@ fn make_window(
     vsync: bool,
     headless: bool,
 ) -> (WindowWrapper, webrender::DeviceInitParams) {
-    let (wrapper, params) = if headless {
+    let (wrapper, params) =  {
         let headles_ctx = HeadlessContext::new(size.width, size.height);
         let gl = match gl::GlType::default() {
             gl::GlType::Gl => unsafe {
@@ -247,38 +247,14 @@ fn make_window(
                 })
             },
         };
-        let params = webrender::create_rgba8_headless(
+        /*let params = webrender::create_rgba8_headless(
             HeadlessContext::get_proc_address,
             size.width,
             size.height,
-        );
+        );*/
         let wrapper = WindowWrapper::Headless(headles_ctx, gl);
 
-        (wrapper, params)
-    } else {
-        let mut window = glutin::WindowBuilder::new()
-            .with_gl(glutin::GlRequest::GlThenGles {
-                opengl_version: (3, 2),
-                opengles_version: (3, 1),
-            })
-            .with_dimensions(size.width, size.height);
-        window.opengl.vsync = vsync;
-        let window = window.build().unwrap();
-        unsafe {
-            window
-                .make_current()
-                .expect("unable to make context current!");
-        }
-        let gl = match gl::GlType::default() {
-            gl::GlType::Gl => unsafe {
-                gl::GlFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
-            },
-            gl::GlType::Gles => unsafe {
-                gl::GlesFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
-            },
-        };
-        let (win, params) = webrender::create_rgba8_window(window);
-        (WindowWrapper::Window(Rc::new(win), gl), params)
+        (wrapper, webrender::DeviceInitParams{})
     };
 
     /*wrapper.gl().clear_color(0.3, 0.0, 0.0, 1.0);

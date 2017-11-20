@@ -1781,7 +1781,7 @@ impl ClipScrollGroup {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PackedLayer {
     pub transform: LayerToWorldTransform,

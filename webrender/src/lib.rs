@@ -49,19 +49,13 @@ extern crate log;
 #[macro_use]
 extern crate thread_profiler;
 #[macro_use]
-extern crate gfx;
+extern crate gfx_hal as gfx;
 
-#[cfg(all(target_os = "windows", feature="dx11"))]
-extern crate gfx_device_dx11 as backend;
-#[cfg(not(feature = "dx11"))]
-extern crate gfx_device_gl as backend;
+#[cfg(feature = "vulkan")]
+extern crate gfx_backend_vulkan as back;
+#[cfg(feature = "gl")]
+extern crate gfx_backend_gl as back;
 
-#[cfg(all(target_os = "windows", feature="dx11"))]
-extern crate gfx_window_dxgi as backend_window;
-#[cfg(not(feature = "dx11"))]
-extern crate glutin as backend_window;
-
-#[cfg(all(target_os = "windows", feature="dx11"))]
 extern crate winit;
 
 mod border;
@@ -86,7 +80,7 @@ mod gpu_cache;
 mod gpu_types;
 mod internal_types;
 mod picture;
-mod pipelines;
+//mod pipelines;
 mod prim_store;
 mod print_tree;
 mod profiler;
@@ -101,7 +95,7 @@ mod texture_allocator;
 mod texture_cache;
 mod tiling;
 mod util;
-mod window;
+//mod window;
 
 pub use record::{ApiRecordingReceiver, BinaryRecorder, WEBRENDER_RECORDING_HEADER};
 
@@ -170,8 +164,8 @@ pub use renderer::{ExternalImage, ExternalImageHandler, ExternalImageSource};
 pub use renderer::{GraphicsApi, GraphicsApiInfo, ReadPixelsFormat, Renderer, RendererOptions};
 pub use renderer::MAX_VERTEX_TEXTURE_WIDTH;
 pub use webrender_api as api;
-pub use window::create_rgba8_window;
+/*pub use window::create_rgba8_window;
 #[cfg(target_os="linux")]
 pub use window::create_rgba8_headless;
-pub use backend_window::Window;
-pub use device::{BackendDevice, DeviceInitParams};
+pub use backend_window::Window;*/
+pub use device::{/*BackendDevice,*/ DeviceInitParams};

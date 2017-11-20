@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{ColorU, DeviceIntRect, DeviceUintSize, ImageFormat};
+use back;
 use debug_font_data;
 use device::{Device, GpuMarker, TextureId, TextureSlot, TextureStorage, VertexDescriptor};
 use device::{TextureFilter, TextureTarget, VertexAttribute, VertexAttributeKind, VertexUsageHint};
@@ -10,8 +11,8 @@ use euclid::{Point2D, Rect, Size2D, Transform3D};
 use internal_types::{ORTHO_FAR_PLANE, ORTHO_NEAR_PLANE};
 use internal_types::RenderTargetMode;
 use std::f32;
-use renderer::{create_debug_color_program, create_debug_font_program, transform_projection, TextureSampler};
-use pipelines::{DebugColorProgram, DebugFontProgram};
+//use renderer::{create_debug_color_program, create_debug_font_program, transform_projection, TextureSampler};
+//use pipelines::{DebugColorProgram, DebugFontProgram};
 
 #[derive(Debug, Copy, Clone)]
 enum DebugSampler {
@@ -94,17 +95,17 @@ impl DebugColorVertex {
 pub struct DebugRenderer {
     font_vertices: Vec<DebugFontVertex>,
     font_indices: Vec<u32>,
-    font_program: DebugFontProgram,
-    font_texture_id: TextureId,
+    //font_program: DebugFontProgram,
+    //font_texture_id: TextureId,
     tri_vertices: Vec<DebugColorVertex>,
     tri_indices: Vec<u32>,
     line_vertices: Vec<DebugColorVertex>,
-    color_program: DebugColorProgram,
+    //color_program: DebugColorProgram,
 }
 
 impl DebugRenderer {
-    pub fn new(device: &mut Device) -> DebugRenderer {
-        let font_program = create_debug_font_program(device, "debug_font");
+    pub fn new(device: &mut Device<back::Backend>) -> DebugRenderer {
+        /*let font_program = create_debug_font_program(device, "debug_font");
         let color_program = create_debug_color_program(device, "debug_color");
         let font_texture_id = device.create_image_texture(debug_font_data::BMP_WIDTH,
                                                           debug_font_data::BMP_HEIGHT,
@@ -120,7 +121,7 @@ impl DebugRenderer {
                                  debug_font_data::BMP_HEIGHT,
                                  0,
                                  None,
-                                 0);
+                                 0);*/
 
         DebugRenderer {
             font_vertices: Vec::new(),
@@ -128,13 +129,13 @@ impl DebugRenderer {
             line_vertices: Vec::new(),
             tri_vertices: Vec::new(),
             tri_indices: Vec::new(),
-            font_program,
-            color_program,
-            font_texture_id,
+            //font_program,
+            //color_program,
+            //font_texture_id,
         }
     }
 
-    pub fn deinit(self, device: &mut Device) {
+    pub fn deinit(self, device: &mut Device<back::Backend>) {
         /*device.delete_texture(self.font_texture);
         device.delete_program(self.font_program);
         device.delete_program(self.color_program);
@@ -252,8 +253,8 @@ impl DebugRenderer {
         self.add_line(p0.x, p1.y, color, p0.x, p0.y, color);
     }
 
-    pub fn render(&mut self, device: &mut Device, viewport_size: &DeviceUintSize) {
-        let _gm = GpuMarker::new("debug");
+    pub fn render(&mut self, device: &mut Device<back::Backend>, viewport_size: &DeviceUintSize) {
+        /*let _gm = GpuMarker::new("debug");
         let projection = transform_projection(Transform3D::ortho(0.0,
                                                                  viewport_size.width as f32,
                                                                  viewport_size.height as f32,
@@ -291,6 +292,6 @@ impl DebugRenderer {
         self.font_vertices.clear();
         self.line_vertices.clear();
         self.tri_vertices.clear();
-        self.tri_indices.clear();
+        self.tri_indices.clear();*/
     }
 }
