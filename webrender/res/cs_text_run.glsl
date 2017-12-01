@@ -6,16 +6,31 @@
 
 #include shared,prim_shared
 
+#ifdef WR_DX11
+    struct v2p {
+        vec4 gl_Position : SV_Position;
+        vec3 vUv : vUv;
+        flat vec4 vColor : vColor;
+    };
+#else
 varying vec3 vUv;
 flat varying vec4 vColor;
+#endif //WR_DX11
 
 #ifdef WR_VERTEX_SHADER
 // Draw a text run to a cache target. These are always
 // drawn un-transformed. These are used for effects such
 // as text-shadow.
 
+#ifndef WR_DX11
 void main(void) {
-    Primitive prim = load_primitive();
+#else
+void main(in a2v IN, out v2p OUT) {
+    vec3 aPosition = IN.pos;
+    ivec4 aDataA = IN.data0;
+    ivec4 aDataB = IN.data1;
+#endif //WR_DX11
+    Primitive prim = load_primitive(aDataA, aDataB);
     TextRun text = fetch_text_run(prim.specific_prim_address);
 
     int glyph_index = prim.user_data0;
@@ -44,16 +59,22 @@ void main(void) {
                    local_rect.xy + local_rect.zw,
                    aPosition.xy);
 
-    vUv = vec3(mix(st0, st1, aPosition.xy), res.layer);
-    vColor = prim.task.color;
+    SHADER_OUT(vUv, vec3(mix(st0, st1, aPosition.xy), res.layer));
+    SHADER_OUT(vColor, prim.task.color);
 
-    gl_Position = uTransform * vec4(pos, 0.0, 1.0);
+    SHADER_OUT(gl_Position, mul(vec4(pos, 0.0, 1.0), uTransform));
 }
 #endif
 
 #ifdef WR_FRAGMENT_SHADER
+#ifndef WR_DX11
 void main(void) {
+#else
+void main(in v2p IN, out p2f OUT) {
+    vec3 vUv = IN.vUv;
+    vec4 vColor = IN.vColor;
+#endif //WR_DX11
     float a = texture(sColor0, vUv).a;
-    Target0 = vec4(vColor.rgb, vColor.a * a);
+    SHADER_OUT(Target0, vec4(vColor.rgb, vColor.a * a));
 }
 #endif

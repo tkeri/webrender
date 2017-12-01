@@ -28,11 +28,15 @@
 #endif
 
 #ifdef WR_VERTEX_SHADER
+#ifndef WR_DX11
     #define varying out
+#endif
 #endif
 
 #ifdef WR_FRAGMENT_SHADER
+#ifndef WR_DX11
     precision highp float;
-
+    
     #define varying in
+#endif
 #endif

@@ -4,14 +4,31 @@
 
 #include shared,prim_shared
 
+#ifdef WR_DX11
+    struct v2p {
+        vec4 gl_Position : SV_Position;
+        vec3 vUv : vUv;
+        flat vec4 vUvBounds : vUvBounds;
+        flat float vAmount : vAmount;
+        flat int vOp : vOp;
+    };
+#else
 varying vec3 vUv;
 flat varying vec4 vUvBounds;
 flat varying float vAmount;
 flat varying int vOp;
+#endif //WR_DX11
 
 #ifdef WR_VERTEX_SHADER
+#ifndef WR_DX11
 void main(void) {
-    CompositeInstance ci = fetch_composite_instance();
+#else
+void main(in a2v IN, out v2p OUT) {
+    vec3 aPosition = IN.pos;
+    ivec4 aDataA = IN.data0;
+    ivec4 aDataB = IN.data1;
+#endif //WR_DX11
+    CompositeInstance ci = fetch_composite_instance(aDataA, aDataB);
     AlphaBatchTask dest_task = fetch_alpha_batch_task(ci.render_task_index);
     AlphaBatchTask src_task = fetch_alpha_batch_task(ci.src_task_index);
 
@@ -28,13 +45,13 @@ void main(void) {
     vec2 st1 = src_task.render_target_origin + src_task.size;
 
     vec2 uv = src_task.render_target_origin + aPosition.xy * src_task.size;
-    vUv = vec3(uv / texture_size, src_task.render_target_layer_index);
-    vUvBounds = vec4(st0 + 0.5, st1 - 0.5) / texture_size.xyxy;
+    SHADER_OUT(vUv, vec3(uv / texture_size, src_task.render_target_layer_index));
+    SHADER_OUT(vUvBounds, vec4(st0 + 0.5, st1 - 0.5) / texture_size.xyxy);
 
-    vOp = ci.user_data0;
-    vAmount = float(ci.user_data1) / 65535.0;
+    SHADER_OUT(vOp, ci.user_data0);
+    SHADER_OUT(vAmount, float(ci.user_data1) / 65535.0);
 
-    gl_Position = uTransform * vec4(local_pos, ci.z, 1.0);
+    SHADER_OUT(gl_Position, mul(vec4(local_pos, ci.z, 1.0), uTransform));
 }
 #endif
 
@@ -48,7 +65,7 @@ vec3 rgbToHsv(vec3 c) {
 
     float chroma = value - min(min(c.r, c.g), c.b);
     if (chroma == 0.0) {
-        return vec3(0.0);
+        return vec3(0.0, 0.0, 0.0);
     }
     float saturation = chroma / value;
 
@@ -67,8 +84,12 @@ vec3 rgbToHsv(vec3 c) {
 }
 
 vec3 hsvToRgb(vec3 c) {
+#ifndef WR_DX11
     if (c.s == 0.0) {
-        return vec3(c.z);
+#else
+    if (c.y == 0.0) {
+#endif
+        return vec3(c.z, c.z, c.z);
     }
 
     float hue = c.x * 6.0;
@@ -94,7 +115,7 @@ vec3 hsvToRgb(vec3 c) {
 
 vec4 Blur(float radius, vec2 direction) {
     // TODO(gw): Support blur in WR2!
-    return vec4(1.0);
+    return vec4(1.0, 1.0, 1.0, 1.0);
 }
 
 vec4 Contrast(vec4 Cs, float amount) {
@@ -103,10 +124,11 @@ vec4 Contrast(vec4 Cs, float amount) {
 
 vec4 Grayscale(vec4 Cs, float amount) {
     float ia = 1.0 - amount;
-    return mat4(vec4(0.2126 + 0.7874 * ia, 0.2126 - 0.2126 * ia, 0.2126 - 0.2126 * ia, 0.0),
+    mat4 mat = mat4(vec4(0.2126 + 0.7874 * ia, 0.2126 - 0.2126 * ia, 0.2126 - 0.2126 * ia, 0.0),
                 vec4(0.7152 - 0.7152 * ia, 0.7152 + 0.2848 * ia, 0.7152 - 0.7152 * ia, 0.0),
                 vec4(0.0722 - 0.0722 * ia, 0.0722 - 0.0722 * ia, 0.0722 + 0.9278 * ia, 0.0),
-                vec4(0.0, 0.0, 0.0, 1.0)) * Cs;
+                vec4(0.0, 0.0, 0.0, 1.0));
+    return mul(Cs, mat);
 }
 
 vec4 HueRotate(vec4 Cs, float amount) {
@@ -118,22 +140,23 @@ vec4 HueRotate(vec4 Cs, float amount) {
 vec4 Invert(vec4 Cs, float amount) {
     Cs.rgb /= Cs.a;
 
-    vec3 color = mix(Cs.rgb, vec3(1.0) - Cs.rgb, amount);
+    vec3 color = mix(Cs.rgb, vec3(1.0, 1.0, 1.0) - Cs.rgb, amount);
 
     // Pre-multiply the alpha into the output value.
     return vec4(color.rgb * Cs.a, Cs.a);
 }
 
 vec4 Saturate(vec4 Cs, float amount) {
-    return vec4(hsvToRgb(min(vec3(1.0, amount, 1.0) * rgbToHsv(Cs.rgb), vec3(1.0))), Cs.a);
+    return vec4(hsvToRgb(min(vec3(1.0, amount, 1.0) * rgbToHsv(Cs.rgb), vec3(1.0, 1.0, 1.0))), Cs.a);
 }
 
 vec4 Sepia(vec4 Cs, float amount) {
     float ia = 1.0 - amount;
-    return mat4(vec4(0.393 + 0.607 * ia, 0.349 - 0.349 * ia, 0.272 - 0.272 * ia, 0.0),
+    mat4 mat = mat4(vec4(0.393 + 0.607 * ia, 0.349 - 0.349 * ia, 0.272 - 0.272 * ia, 0.0),
                 vec4(0.769 - 0.769 * ia, 0.686 + 0.314 * ia, 0.534 - 0.534 * ia, 0.0),
                 vec4(0.189 - 0.189 * ia, 0.168 - 0.168 * ia, 0.131 + 0.869 * ia, 0.0),
-                vec4(0.0, 0.0, 0.0, 1.0)) * Cs;
+                vec4(0.0, 0.0, 0.0, 1.0));
+    return mul(Cs, mat);
 }
 
 vec4 Brightness(vec4 Cs, float amount) {
@@ -143,7 +166,7 @@ vec4 Brightness(vec4 Cs, float amount) {
     // Apply the brightness factor.
     // Resulting color needs to be clamped to output range
     // since we are pre-multiplying alpha in the shader.
-    vec3 color = clamp(Cs.rgb * amount, vec3(0.0), vec3(1.0));
+    vec3 color = clamp(Cs.rgb * amount, vec3(0.0, 0.0, 0.0), vec3(1.0, 1.0, 1.0));
 
     // Pre-multiply the alpha into the output value.
     return vec4(color.rgb * Cs.a, Cs.a);
@@ -153,7 +176,15 @@ vec4 Opacity(vec4 Cs, float amount) {
     return Cs * amount;
 }
 
+#ifndef WR_DX11
 void main(void) {
+#else
+void main(in v2p IN, out p2f OUT) {
+    vec3 vUv = IN.vUv;
+    vec4 vUvBounds = IN.vUvBounds;
+    float vAmount = IN.vAmount;
+    int vOp = IN.vOp;
+#endif //WR_DX11
     vec2 uv = clamp(vUv.xy, vUvBounds.xy, vUvBounds.zw);
     vec4 Cs = textureLod(sCacheRGBA8, vec3(uv, vUv.z), 0.0);
 
@@ -164,31 +195,31 @@ void main(void) {
     switch (vOp) {
         case 0:
             // Gaussian blur is specially handled:
-            Target0 = Cs;// Blur(vAmount, vec2(0,0));
+            SHADER_OUT(Target0, Cs);// Blur(vAmount, vec2(0,0));
             break;
         case 1:
-            Target0 = Contrast(Cs, vAmount);
+            SHADER_OUT(Target0, Contrast(Cs, vAmount));
             break;
         case 2:
-            Target0 = Grayscale(Cs, vAmount);
+            SHADER_OUT(Target0, Grayscale(Cs, vAmount));
             break;
         case 3:
-            Target0 = HueRotate(Cs, vAmount);
+            SHADER_OUT(Target0, HueRotate(Cs, vAmount));
             break;
         case 4:
-            Target0 = Invert(Cs, vAmount);
+            SHADER_OUT(Target0, Invert(Cs, vAmount));
             break;
         case 5:
-            Target0 = Saturate(Cs, vAmount);
+            SHADER_OUT(Target0, Saturate(Cs, vAmount));
             break;
         case 6:
-            Target0 = Sepia(Cs, vAmount);
+            SHADER_OUT(Target0, Sepia(Cs, vAmount));
             break;
         case 7:
-            Target0 = Brightness(Cs, vAmount);
+            SHADER_OUT(Target0, Brightness(Cs, vAmount));
             break;
         case 8:
-            Target0 = Opacity(Cs, vAmount);
+            SHADER_OUT(Target0, Opacity(Cs, vAmount));
             break;
     }
 }

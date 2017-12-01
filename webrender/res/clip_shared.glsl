@@ -10,10 +10,20 @@
 #define SEGMENT_CORNER_BL   3
 #define SEGMENT_CORNER_BR   4
 
+#ifdef WR_DX11
+struct a2v_clip {
+    vec3 pos : aPosition;
+    int aClipRenderTaskAddress : aClipRenderTaskAddress;
+    int aClipLayerAddress : aClipLayerAddress;
+    int aClipSegment : aClipSegment;
+    ivec4 aClipDataResourceAddress : aClipDataResourceAddress;
+};
+#else
 in int aClipRenderTaskAddress;
 in int aClipLayerAddress;
 in int aClipSegment;
 in ivec4 aClipDataResourceAddress;
+#endif //WR_DX11
 
 struct ClipMaskInstance {
     int render_task_address;
@@ -23,7 +33,12 @@ struct ClipMaskInstance {
     ivec2 resource_address;
 };
 
-ClipMaskInstance fetch_clip_item() {
+ClipMaskInstance fetch_clip_item(
+    int aClipRenderTaskAddress,
+    int aClipLayerAddress,
+    int aClipSegment,
+    ivec4 aClipDataResourceAddress)
+{
     ClipMaskInstance cmi;
 
     cmi.render_task_address = aClipRenderTaskAddress;
@@ -43,15 +58,24 @@ struct ClipVertexInfo {
 
 RectWithSize intersect_rect(RectWithSize a, RectWithSize b) {
     vec4 p = clamp(vec4(a.p0, a.p0 + a.size), b.p0.xyxy, b.p0.xyxy + b.size.xyxy);
-    return RectWithSize(p.xy, max(vec2(0.0), p.zw - p.xy));
+    RectWithSize result;
+    result.p0 = p.xy;
+    result.size = max(vec2(0.0, 0.0), p.zw - p.xy);
+    return result;
 }
 
 // The transformed vertex function that always covers the whole clip area,
 // which is the intersection of all clip instances of a given primitive
-ClipVertexInfo write_clip_tile_vertex(RectWithSize local_clip_rect,
+ClipVertexInfo write_clip_tile_vertex(vec3 aPosition,
+                                      RectWithSize local_clip_rect,
                                       Layer layer,
                                       ClipArea area,
-                                      int segment) {
+                                      int segment
+#ifdef WR_DX11
+                                      , out vec4 gl_Position
+                                      , out vec4 vLocalBounds
+#endif //WR_DX11
+                                      ) {
 
     RectWithSize clipped_local_rect = intersect_rect(local_clip_rect,
                                                      layer.local_clip_rect);
@@ -83,6 +107,10 @@ ClipVertexInfo write_clip_tile_vertex(RectWithSize local_clip_rect,
             p0 = vec2(outer_p1.x, outer_p0.y);
             p1 = vec2(inner_p1.x, inner_p0.y);
             break;
+        default:
+            p0 = outer_p0;
+            p1 = outer_p1;
+            break;
     }
 
     vec2 actual_pos = mix(p0, p1, aPosition.xy);
@@ -92,11 +120,15 @@ ClipVertexInfo write_clip_tile_vertex(RectWithSize local_clip_rect,
     // compute the point position in side the layer, in CSS space
     vec2 vertex_pos = actual_pos + area.task_bounds.xy - area.screen_origin_target_index.xy;
 
-    gl_Position = uTransform * vec4(vertex_pos, 0.0, 1);
+    gl_Position = mul(vec4(vertex_pos, 0.0, 1), uTransform);
 
     vLocalBounds = vec4(clipped_local_rect.p0, clipped_local_rect.p0 + clipped_local_rect.size);
 
-    return ClipVertexInfo(layer_pos.xyw, actual_pos, clipped_local_rect);
+    ClipVertexInfo cvi;
+    cvi.local_pos = layer_pos.xyw;
+    cvi.screen_pos = actual_pos;
+    cvi.clipped_local_rect = clipped_local_rect;
+    return cvi;
 }
 
 #endif //WR_VERTEX_SHADER

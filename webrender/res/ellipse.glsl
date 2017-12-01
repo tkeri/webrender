@@ -94,7 +94,7 @@ float rounded_rect(vec2 pos,
     current_distance = clip_against_ellipse_if_needed(pos,
                                                       current_distance,
                                                       clip_center_radius_tl,
-                                                      vec2(1.0));
+                                                      vec2(1.0, 1.0));
 
     current_distance = clip_against_ellipse_if_needed(pos,
                                                       current_distance,
@@ -104,7 +104,7 @@ float rounded_rect(vec2 pos,
     current_distance = clip_against_ellipse_if_needed(pos,
                                                       current_distance,
                                                       clip_center_radius_br,
-                                                      vec2(-1.0));
+                                                      vec2(-1.0, -1.0));
 
     current_distance = clip_against_ellipse_if_needed(pos,
                                                       current_distance,

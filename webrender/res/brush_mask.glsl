@@ -23,8 +23,14 @@ struct BrushPrimitive {
 };
 
 BrushPrimitive fetch_brush_primitive(int address) {
-    vec4 data[3] = fetch_from_resource_cache_3(address);
-    return BrushPrimitive(data[0].x, data[1].xy, data[1].zw, data[2].xy, data[2].zw);
+    ResourceCacheData3 data = fetch_from_resource_cache_3(address);
+    BrushPrimitive brush;
+    brush.clip_mode = data.data0.x;
+    brush.radius_tl = data.data1.xy;
+    brush.radius_tr = data.data1.zw;
+    brush.radius_br = data.data2.xy;
+    brush.radius_bl = data.data2.zw;
+    return brush;
 }
 
 void brush_vs(

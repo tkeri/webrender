@@ -26,7 +26,7 @@ struct BrushInstance {
     ivec2 user_data;
 };
 
-BrushInstance load_brush() {
+BrushInstance load_brush(ivec4 aDataA, ivec4 aDataB) {
 	BrushInstance bi;
 
     bi.picture_address = aDataA.x;
@@ -40,9 +40,16 @@ BrushInstance load_brush() {
     return bi;
 }
 
+#ifndef WR_DX11
 void main(void) {
+#else
+void main(in a2v IN, out v2p OUT) {
+    vec3 aPosition = IN.pos;
+    ivec4 aDataA = IN.data0;
+    ivec4 aDataB = IN.data1;
+#endif //WR_DX11
     // Load the brush instance from vertex attributes.
-    BrushInstance brush = load_brush();
+    BrushInstance brush = load_brush(aDataA, aDataB);
 
     // Load the geometry for this brush. For now, this is simply the
     // local rect of the primitive. In the future, this will support
@@ -74,12 +81,16 @@ void main(void) {
         //           them yet anyway, so we're not losing any
         //           existing functionality.
         VertexInfo vi = write_vertex(
+            aPosition,
             geom.local_rect,
             geom.local_clip_rect,
             float(brush.z),
             layer,
             alpha_task,
             geom.local_rect
+#ifdef WR_DX11
+            , OUT.Position
+#endif //WR_DX11
         );
 
         local_pos = vi.local_pos;
@@ -94,6 +105,10 @@ void main(void) {
         write_clip(
             vi.screen_pos,
             clip_area
+#ifdef WR_DX11
+            , OUT.vClipMaskUvBounds
+            , OUT.vClipMaskUv
+#endif //WR_DX11
         );
 #endif
     }
@@ -112,13 +127,19 @@ void main(void) {
 
 vec4 brush_fs();
 
+#ifndef WR_DX11
 void main(void) {
+#else
+void main(in v2p IN, out p2f OUT) {
+    vec4 vClipMaskUvBounds = IN.vClipMaskUvBounds;
+    vec3 vClipMaskUv = IN.vClipMaskUv;
+#endif // WR_DX11
     // Run the specific brush FS code to output the color.
     vec4 color = brush_fs();
 
 #ifdef WR_FEATURE_ALPHA_PASS
     // Apply the clip mask
-    color *= do_clip();
+    color *= do_clip(vClipMaskUvBounds, vClipMaskUv);
 #endif
 
     // TODO(gw): Handle pre-multiply common code here as required.
