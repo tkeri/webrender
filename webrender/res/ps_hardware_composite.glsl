@@ -56,7 +56,6 @@ void main(void) {
 #else
 void main(in v2p IN, out p2f OUT) {
     vec3 vUv = IN.vUv;
-    vUv.y = 1.0 - vUv.y;
     vec4 vUvBounds = IN.vUvBounds;
 #endif //WR_DX11
     vec2 uv = clamp(vUv.xy, vUvBounds.xy, vUvBounds.zw);

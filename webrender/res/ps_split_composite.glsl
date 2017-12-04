@@ -90,7 +90,7 @@ void main(in v2p IN, out p2f OUT) {
         vec2 uv = clamp(vUv.xy, vUvSampleBounds.xy, vUvSampleBounds.zw);
 #ifdef WR_DX11
         uv.y = 1.0 - uv.y;
-#endif
+#endif //WR_DX11
         SHADER_OUT(Target0, textureLod(sCacheRGBA8, vec3(uv, vUv.z), 0.0));
     } else {
         SHADER_OUT(Target0, vec4(0.0, 0.0, 0.0, 0.0));

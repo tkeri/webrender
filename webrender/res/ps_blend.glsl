@@ -186,6 +186,9 @@ void main(in v2p IN, out p2f OUT) {
     int vOp = IN.vOp;
 #endif //WR_DX11
     vec2 uv = clamp(vUv.xy, vUvBounds.xy, vUvBounds.zw);
+#ifdef WR_DX11
+        uv.y = 1.0 - uv.y;
+#endif //WR_DX11
     vec4 Cs = textureLod(sCacheRGBA8, vec3(uv, vUv.z), 0.0);
 
     if (Cs.a == 0.0) {
