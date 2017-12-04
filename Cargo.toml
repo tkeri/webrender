@@ -3,6 +3,7 @@ members = [
     "webrender",
     "webrender_api",
     "wrench",
+    "wrench_dx",
 ]
 
 [profile.release]
