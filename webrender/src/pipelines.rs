@@ -120,10 +120,9 @@ gfx_defines! {
     }
 
     constant Locals {
-        mode: i32 = "uMode",
         transform: [[f32; 4]; 4] = "uTransform",
         device_pixel_ratio: f32 = "uDevicePixelRatio",
-
+        mode: i32 = "uMode",
     }
 
     pipeline primitive {
