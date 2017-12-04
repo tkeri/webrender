@@ -167,7 +167,10 @@ impl<T> CacheTexture<T> where T: gfx::format::RenderFormat + gfx::format::Textur
         where F: gfx::Factory<R>
     {
         let (width, height) = (size[0] as u16, size[1] as u16);
+        #[cfg(not(feature = "dx11"))]
         let tex_kind = Kind::D2Array(width, height, 1, gfx::texture::AaMode::Single);
+        #[cfg(all(target_os = "windows", feature="dx11"))]
+        let tex_kind = Kind::D2(width, height, gfx::texture::AaMode::Single);
 
         let (surface, rtv, view, dsv) = {
             let surface = <T::Surface as gfx::format::SurfaceTyped>::get_surface_type();
@@ -482,6 +485,7 @@ impl Device {
         }
     }
 
+    #[cfg(not(feature = "dx11"))]
     pub fn read_pixels(&mut self, rect: DeviceUintRect, output: &mut [u8]) {
         // TODO add bgra flag
         self.encoder.flush(&mut self.device);
@@ -506,6 +510,55 @@ impl Device {
                     output[offset + 2] = src[2];
                     output[offset + 3] = src[3];
                 }
+            }
+        }
+    }
+
+    #[cfg(all(target_os = "windows", feature="dx11"))]
+    pub fn read_pixels(&mut self, rect: DeviceUintRect, output: &mut [u8]) {
+        self.encoder.flush(&mut self.device);
+
+        let (w, h, _, _) = self.main_color.get_dimensions();
+        let tex_kind = Kind::D2(w, h, gfx::texture::AaMode::Single);
+        let desc = gfx::texture::Info {
+            kind: tex_kind,
+            levels: 1,
+            format: gfx::format::SurfaceType::R8_G8_B8_A8,
+            bind: gfx::TRANSFER_SRC | gfx::TRANSFER_DST,
+            usage: gfx::memory::Usage::Download,
+        };
+        let cty = gfx::format::ChannelType::Unorm;
+        let dst_tex_raw = self.factory.create_texture_raw(desc, Some(cty), None).unwrap();
+
+        let info = gfx::texture::RawImageInfo {
+            xoffset: rect.origin.x as u16,
+            yoffset: rect.origin.y as u16,
+            zoffset: 0,
+            width: rect.size.width as u16,
+            height: rect.size.height as u16,
+            depth: 0,
+            format: ColorFormat::get_format(),
+            mipmap: 0,
+        };
+
+        self.encoder.copy_texture_to_texture_raw(
+            &self.main_color.raw().get_texture(), None, info.clone(),
+            &dst_tex_raw, None, info).unwrap();
+        self.encoder.flush(&mut self.device);
+
+        let dst_tex = Typed::new(dst_tex_raw);
+
+        let (data, row_pitch) = self.factory.map_texture_read::<gfx::format::R8_G8_B8_A8>(&dst_tex);
+        println!("\n\nrect = {:?}\noutput len = {:?}\ndata len = {:?}\n\n", rect, output.len(), data.len()*4);
+        //output.clone_from_slice(gfx::memory::cast_slice(data));
+        for j in 0..rect.size.height as usize {
+            for i in 0..rect.size.width as usize {
+                let offset = i * RGBA_STRIDE + j * rect.size.width as usize * RGBA_STRIDE;
+                let src = &data[(j + rect.origin.y as usize) * row_pitch as usize + (i + rect.origin.x as usize)];
+                output[offset + 0] = src[0];
+                output[offset + 1] = src[1];
+                output[offset + 2] = src[2];
+                output[offset + 3] = src[3];
             }
         }
     }
@@ -708,7 +761,6 @@ impl Device {
             Some((src_id, _)) => self.cache_rgba8_textures.get(&src_id).unwrap().handle.raw(),
             None => self.main_color.raw().get_texture(),
         };
-        let dst_tex = self.cache_rgba8_textures.get(&dst_id).unwrap().handle.raw();
         let src_rect = src_rect.unwrap_or_else(|| {
             let (w, h, _, _) = src_tex.get_info().kind.get_dimensions();
             DeviceIntRect::new(DeviceIntPoint::zero(), DeviceIntSize::new(w as i32, h as i32))
@@ -730,9 +782,16 @@ impl Device {
             info: src_info,
         };*/
 
+        let dst_tex = self.cache_rgba8_textures.get(&dst_id).unwrap();
+        let mut dest_yoffset = dest_rect.origin.y;
+        if cfg!(feature = "dx11") {
+            let dest_tex_height = dst_tex.get_size().1;
+            dest_yoffset = dest_tex_height as i32 - dest_rect.size.height - dest_rect.origin.y;
+        }
+
         let dst_info = gfx::texture::RawImageInfo {
             xoffset: dest_rect.origin.x as u16,
-            yoffset: dest_rect.origin.y as u16,
+            yoffset: dest_yoffset as u16,
             zoffset: 0,
             width: dest_rect.size.width as u16,
             height: dest_rect.size.height as u16,
@@ -750,7 +809,7 @@ impl Device {
         println!("dst_id={:?} dst_info={:?}", dst_id, dst_info);
         self.encoder.copy_texture_to_texture_raw(
             &src_tex, None, src_info,
-            &dst_tex, None, dst_info).unwrap();
+            &dst_tex.handle.raw(), None, dst_info).unwrap();
     }
 
     pub fn clear_target(&mut self,

@@ -171,7 +171,7 @@ pub use renderer::{GraphicsApi, GraphicsApiInfo, ReadPixelsFormat, Renderer, Ren
 pub use renderer::MAX_VERTEX_TEXTURE_WIDTH;
 pub use webrender_api as api;
 pub use window::create_rgba8_window;
-#[cfg(target_os="linux")]
+#[cfg(not(feature = "dx11"))]
 pub use window::create_rgba8_headless;
 pub use backend_window::Window;
 pub use device::{BackendDevice, DeviceInitParams};

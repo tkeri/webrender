@@ -2172,10 +2172,12 @@ impl Renderer {
 
                 // Need to invert the y coordinates and flip the image vertically when
                 // reading back from the framebuffer.
-                if render_target.is_none() {
+                if render_target.is_none() && cfg!(not(feature = "dx11")) {
                     src.origin.y = target_dimensions.height as i32 - src.size.height - src.origin.y;
                     //dest.origin.y += dest.size.height;
                     //dest.size.height = -dest.size.height;
+                } else if render_target.is_some() && cfg!(feature = "dx11") {
+                    src.origin.y = target_dimensions.height as i32 - src.size.height - src.origin.y;
                 }
 
                 // self.device.bind_read_target(render_target);
