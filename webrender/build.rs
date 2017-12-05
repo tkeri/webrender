@@ -310,11 +310,6 @@ fn create_shaders(out_dir: String, shaders: &HashMap<String, String>) -> Vec<Str
 #[cfg(all(target_os = "windows", feature="dx11"))]
 fn compile_fx_files(file_names: Vec<String>, out_dir: String) {
     for mut file_name in file_names {
-        //TODO: Remove SUPPORTED_SHADERS when all shader conversion is done.
-        if file_name.contains("ps_clear")
-           || !(file_name.contains("ps_") || file_name.contains("cs_") || file_name.starts_with("debug_")) {
-            continue;
-        }
         let is_vert = file_name.ends_with(".vert");
         if !is_vert && !file_name.ends_with(".frag") {
             continue;

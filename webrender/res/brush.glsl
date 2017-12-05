@@ -69,7 +69,11 @@ void main(in a2v IN, out v2p OUT) {
         local_pos = aPosition.xy * pic_task.target_rect.size / uDevicePixelRatio;
 
         // Write the final position transformed by the orthographic device-pixel projection.
+#ifdef WR_DX11
+        OUT.Position = mul(vec4(device_pos, 0.0, 1.0), uTransform);
+#else
         gl_Position = uTransform * vec4(device_pos, 0.0, 1.0);
+#endif
     } else {
         AlphaBatchTask alpha_task = fetch_alpha_batch_task(brush.picture_address);
         Layer layer = fetch_layer(brush.layer_address);
@@ -125,17 +129,23 @@ void main(in a2v IN, out v2p OUT) {
 
 #ifdef WR_FRAGMENT_SHADER
 
+#ifdef WR_DX11
+vec4 brush_fs(in v2p IN);
+#else
 vec4 brush_fs();
+#endif
 
 #ifndef WR_DX11
 void main(void) {
+    // Run the specific brush FS code to output the color.
+    vec4 color = brush_fs();
 #else
 void main(in v2p IN, out p2f OUT) {
     vec4 vClipMaskUvBounds = IN.vClipMaskUvBounds;
     vec3 vClipMaskUv = IN.vClipMaskUv;
-#endif // WR_DX11
     // Run the specific brush FS code to output the color.
-    vec4 color = brush_fs();
+    vec4 color = brush_fs(IN);
+#endif // WR_DX11
 
 #ifdef WR_FEATURE_ALPHA_PASS
     // Apply the clip mask
