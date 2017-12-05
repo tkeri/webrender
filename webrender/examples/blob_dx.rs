@@ -10,13 +10,14 @@ extern crate winit;
 mod boilerplate;
 
 use boilerplate::{Example, HandyDandyRectBuilder};
-use rayon::ThreadPool;
 use rayon::Configuration as ThreadPoolConfig;
+use rayon::ThreadPool;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
-use webrender::api::{self, RenderApi, DisplayListBuilder, ResourceUpdates, LayoutSize, PipelineId, DocumentId};
+use webrender::api::{self, DeviceUintRect, DisplayListBuilder, DocumentId, LayoutSize, PipelineId,
+                     RenderApi, ResourceUpdates};
 
 // This example shows how to implement a very basic BlobImageRenderer that can only render
 // a checkerboard pattern.
@@ -139,7 +140,7 @@ impl api::BlobImageRenderer for CheckerboardRenderer {
         self.image_cmds.insert(key, Arc::new(deserialize_blob(&cmds[..]).unwrap()));
     }
 
-    fn update(&mut self, key: api::ImageKey, cmds: api::BlobImageData) {
+    fn update(&mut self, key: api::ImageKey, cmds: api::BlobImageData, _dirty_rect: Option<DeviceUintRect>) {
         // Here, updating is just replacing the current version of the commands with
         // the new one (no incremental updates).
         self.image_cmds.insert(key, Arc::new(deserialize_blob(&cmds[..]).unwrap()));
@@ -239,26 +240,29 @@ impl Example for App {
         );
 
         let bounds = api::LayoutRect::new(api::LayoutPoint::zero(), layout_size);
-        builder.push_stacking_context(api::ScrollPolicy::Scrollable,
-                                      bounds,
-                                      None,
-                                      api::TransformStyle::Flat,
-                                      None,
-                                      api::MixBlendMode::Normal,
-                                      Vec::new());
+        let info = api::LayoutPrimitiveInfo::new(bounds);
+        builder.push_stacking_context(
+            &info,
+            api::ScrollPolicy::Scrollable,
+            None,
+            api::TransformStyle::Flat,
+            None,
+            api::MixBlendMode::Normal,
+            Vec::new(),
+        );
 
+        let info = api::LayoutPrimitiveInfo::new((30, 30).by(500, 500));
         builder.push_image(
-            (30, 30).by(500, 500),
-            Some(api::LocalClip::from(bounds)),
+            &info,
             api::LayoutSize::new(500.0, 500.0),
             api::LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
             blob_img1,
         );
 
+        let info = api::LayoutPrimitiveInfo::new((600, 600).by(200, 200));
         builder.push_image(
-            (600, 600).by(200, 200),
-            Some(api::LocalClip::from(bounds)),
+            &info,
             api::LayoutSize::new(200.0, 200.0),
             api::LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
