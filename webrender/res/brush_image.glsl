@@ -82,6 +82,9 @@ vec4 brush_fs(in v2p IN) {
 #endif //WR_FEATURE_ALPHA_TARGET
 #endif //WR_DX11
     vec2 uv = clamp(vUv.xy, vUvBounds.xy, vUvBounds.zw);
+#ifdef WR_DX11
+    uv.y = 1.0 - uv.y;
+#endif //WR_DX11
 
 #ifdef WR_FEATURE_COLOR_TARGET
     vec4 color = texture(sColor0, vec3(uv, vUv.z));

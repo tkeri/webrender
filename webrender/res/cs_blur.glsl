@@ -115,6 +115,7 @@ void main(in a2v_cs IN, out v2p OUT) {
 
 #ifndef WR_DX11
 void main(void) {
+    SAMPLE_TYPE original_color = SAMPLE_TEXTURE(vUv);
 #else
 void main(in v2p IN, out p2f OUT) {
     vec3 vUv = IN.vUv;
@@ -123,8 +124,8 @@ void main(in v2p IN, out p2f OUT) {
     float vSigma = IN.vSigma;
     int vBlurRadius = IN.vBlurRadius;
     vec4 gl_FragCoord = IN.gl_Position;
+    SAMPLE_TYPE original_color = SAMPLE_TEXTURE(vec3(vUv.x, 1.0 - vUv.y, vUv.z));
 #endif //WR_DX11
-    SAMPLE_TYPE original_color = SAMPLE_TEXTURE(vUv);
 
     // TODO(gw): The gauss function gets NaNs when blur radius
     //           is zero. In the future, detect this earlier
@@ -154,9 +155,15 @@ void main(in v2p IN, out p2f OUT) {
         vec2 offset = vOffsetScale * vec2(float(i), float(i));
 
         vec2 st0 = clamp(vUv.xy - offset, vUvRect.xy, vUvRect.zw);
+#ifdef WR_DX11
+        st0.y = 1.0 - st0.y;
+#endif //WR_DX11
         avg_color += SAMPLE_TEXTURE(vec3(st0, vUv.z)) * gauss_coefficient.x;
 
         vec2 st1 = clamp(vUv.xy + offset, vUvRect.xy, vUvRect.zw);
+#ifdef WR_DX11
+        st1.y = 1.0 - st1.y;
+#endif //WR_DX11
         avg_color += SAMPLE_TEXTURE(vec3(st1, vUv.z)) * gauss_coefficient.x;
 
         gauss_coefficient_sum += 2.0 * gauss_coefficient.x;
