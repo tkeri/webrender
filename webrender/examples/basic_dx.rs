@@ -215,12 +215,18 @@ impl Example for App {
         /*let id = builder.define_clip(None, bounds, vec![complex], Some(mask));
         builder.push_clip_id(id);*/
 
-        let info = LayoutPrimitiveInfo::new((100, 100).to(200, 200));
+        /*let info = LayoutPrimitiveInfo::new((100, 100).to(200, 200));
         builder.push_rect(&info, ColorF::new(0.0, 1.0, 0.0, 1.0));
 
+        let info = LayoutPrimitiveInfo::new((100, 100).to(200, 200));
+        builder.push_rect(&info, ColorF::new(0.0, 0.0, 1.0, 1.0));
+
         let info = LayoutPrimitiveInfo::new((250, 100).to(350, 200));
-        builder.push_rect(&info, ColorF::new(0.0, 1.0, 0.0, 1.0));
-        /*let border_side = BorderSide {
+        builder.push_rect(&info, ColorF::new(1.0, 0.0, 0.0, 1.0));
+
+        let info = LayoutPrimitiveInfo::new((450, 100).to(550, 200));
+        builder.push_rect(&info, ColorF::new(1.0, 0.0, 0.0, 1.0));*/
+        let border_side = BorderSide {
             color: ColorF::new(0.0, 0.0, 1.0, 1.0),
             style: BorderStyle::Groove,
         };
@@ -240,7 +246,28 @@ impl Example for App {
 
         let info = LayoutPrimitiveInfo::new((100, 100).to(200, 200));
         builder.push_border(&info, border_widths, border_details);
-        builder.pop_clip_id();*/
+
+        let border_side2 = BorderSide {
+            color: ColorF::new(1.0, 0.0, 0.0, 1.0),
+            style: BorderStyle::Groove,
+        };
+        let border_widths2 = BorderWidths {
+            top: 10.0,
+            left: 10.0,
+            bottom: 10.0,
+            right: 10.0,
+        };
+        let border_details2 = BorderDetails::Normal(NormalBorder {
+            top: border_side2,
+            right: border_side2,
+            bottom: border_side2,
+            left: border_side2,
+            radius: BorderRadius::uniform(20.0),
+        });
+
+        let info2 = LayoutPrimitiveInfo::new((300, 100).to(400, 200));
+        builder.push_border(&info2, border_widths2, border_details2);
+        //builder.pop_clip_id();
 
         if false {
             // draw text?

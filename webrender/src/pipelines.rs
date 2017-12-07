@@ -120,8 +120,8 @@ gfx_defines! {
     }
 
     constant Locals {
-        mode: i32 = "uMode",
         transform: [[f32; 4]; 4] = "uTransform",
+        mode: i32 = "uMode",
         device_pixel_ratio: f32 = "uDevicePixelRatio",
 
     }

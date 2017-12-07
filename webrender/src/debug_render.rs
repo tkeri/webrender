@@ -94,18 +94,18 @@ impl DebugColorVertex {
 pub struct DebugRenderer {
     font_vertices: Vec<DebugFontVertex>,
     font_indices: Vec<u32>,
-    font_program: DebugFontProgram,
+    //font_program: DebugFontProgram,
     font_texture_id: TextureId,
     tri_vertices: Vec<DebugColorVertex>,
     tri_indices: Vec<u32>,
     line_vertices: Vec<DebugColorVertex>,
-    color_program: DebugColorProgram,
+    //color_program: DebugColorProgram,
 }
 
 impl DebugRenderer {
     pub fn new(device: &mut Device) -> DebugRenderer {
-        let font_program = create_debug_font_program(device, "debug_font");
-        let color_program = create_debug_color_program(device, "debug_color");
+        //let font_program = create_debug_font_program(device, "debug_font");
+        //let color_program = create_debug_color_program(device, "debug_color");
         let font_texture_id = device.create_image_texture(debug_font_data::BMP_WIDTH,
                                                           debug_font_data::BMP_HEIGHT,
                                                           1,
@@ -128,8 +128,8 @@ impl DebugRenderer {
             line_vertices: Vec::new(),
             tri_vertices: Vec::new(),
             tri_indices: Vec::new(),
-            font_program,
-            color_program,
+            //font_program,
+            //color_program,
             font_texture_id,
         }
     }
@@ -262,10 +262,10 @@ impl DebugRenderer {
                                                                  ORTHO_FAR_PLANE));
 
         // Triangles
-        if !self.tri_vertices.is_empty() {
+        /*if !self.tri_vertices.is_empty() {
                 self.color_program.bind(device, &projection, &self.tri_indices, &self.tri_vertices, None);
                 self.color_program.draw(device);
-        }
+        }*/
 
         // Lines
         /*if !self.line_vertices.is_empty() {
@@ -281,11 +281,11 @@ impl DebugRenderer {
         }*/
 
         // Glyph
-        if !self.font_indices.is_empty() {
+        /*if !self.font_indices.is_empty() {
             device.bind_texture(TextureSampler::Color0, self.font_texture_id, TextureStorage::Image);
             self.font_program.bind(device, &projection, &self.font_indices, &self.font_vertices);
             self.font_program.draw(device);
-        }
+        }*/
 
         self.font_indices.clear();
         self.font_vertices.clear();

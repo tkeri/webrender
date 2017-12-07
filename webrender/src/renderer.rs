@@ -997,7 +997,7 @@ impl BindDraw for Box<BrushProgram> {
 
 fn create_prim_programs(device: &mut Device, filename: &str) -> ProgramPair {
     let program = create_program(device, filename);
-    ProgramPair((program, create_program(device, &format!("{}_transform", filename))))
+    ProgramPair((program, create_program(device, &format!("{}", filename))))
 }
 
 fn create_brush_programs(device: &mut Device, filename: &str) -> BrushProgramPair {
@@ -1007,7 +1007,8 @@ fn create_brush_programs(device: &mut Device, filename: &str) -> BrushProgramPai
 
 fn create_text_programs(device: &mut Device, filename: &str) -> TextProgramPair {
     let program = create_text_program(device, filename);
-    TextProgramPair((program, create_text_program(device, &format!("{}_transform", filename))))
+    //TextProgramPair((program, create_text_program(device, &format!("{}_transform", filename))))
+    TextProgramPair((program, create_text_program(device, &format!("{}", filename))))
 }
 
 #[cfg(not(feature = "dx11"))]
@@ -1048,6 +1049,7 @@ fn create_text_program(device: &mut Device, filename: &str) -> Box<TextProgram> 
 
 #[cfg(all(target_os = "windows", feature="dx11"))]
 fn create_text_program(device: &mut Device, filename: &str) -> Box<TextProgram> {
+    println!("FileNAme: {:?}", filename);
     let vs = get_shader_source(filename, ".vert.fx");
     let ps = get_shader_source(filename, ".frag.fx");
     Box::new(device.create_text_program(vs.as_slice(), ps.as_slice()))
@@ -1138,7 +1140,8 @@ pub fn transform_projection(projection: Transform3D<f32>) -> Transform3D<f32> {
                                            0.0, 1.0, 0.0, 0.0,
                                            0.0, 0.0, 0.5, 0.5,
                                            0.0, 0.0, 0.0, 1.0);
-    transform.post_mul(&Transform3D::from_array(projection.to_column_major_array()))
+    Transform3D::from_array(
+        transform.post_mul(&Transform3D::from_array(projection.to_column_major_array())).to_column_major_array())
 }
 
 #[cfg(not(feature = "dx11"))]
@@ -1202,14 +1205,14 @@ pub struct Renderer {
     // output, and the cache_image shader blits the results of
     // a cache shader (e.g. blur) to the screen.
     ps_rectangle: ProgramPair,
-    /*ps_rectangle_clip: ProgramPair,
+    //ps_rectangle_clip: ProgramPair,
     ps_text_run: TextProgramPair,
     ps_image: ProgramPair,
-    ps_yuv_image: Vec<ProgramPair>,
+    //ps_yuv_image: Vec<ProgramPair>,
     ps_border_corner: ProgramPair,
     ps_border_edge: ProgramPair,
     ps_gradient: ProgramPair,
-    ps_angle_gradient: ProgramPair,
+    /*ps_angle_gradient: ProgramPair,
     ps_radial_gradient: ProgramPair,
     ps_line: ProgramPair,
 
@@ -1342,21 +1345,21 @@ impl Renderer {
         let cs_clip_border = create_clip_program(&mut device, "cs_clip_border_transform");*/
 
         let ps_rectangle = create_prim_programs(&mut device, "ps_rectangle");
-        /*let ps_rectangle_clip = create_prim_programs(&mut device, "ps_rectangle_clip");
+        //let ps_rectangle_clip = create_prim_programs(&mut device, "ps_rectangle_clip");
         let ps_text_run = create_text_programs(&mut device, "ps_text_run");
         let ps_image = create_prim_programs(&mut device, "ps_image");
-        let ps_yuv_image =
+        /*let ps_yuv_image =
             vec![create_prim_programs(&mut device, "ps_yuv_image_nv12"),
                  create_prim_programs(&mut device, "ps_yuv_image_nv12_yuv_rec709"),
                  create_prim_programs(&mut device, "ps_yuv_image"),
                  create_prim_programs(&mut device, "ps_yuv_image_yuv_rec709"),
                  create_prim_programs(&mut device, "ps_yuv_image_interleaved_y_cb_cr"),
-                 create_prim_programs(&mut device, "ps_yuv_image_interleaved_y_cb_cr_yuv_rec709")];
+                 create_prim_programs(&mut device, "ps_yuv_image_interleaved_y_cb_cr_yuv_rec709")];*/
 
         let ps_border_corner = create_prim_programs(&mut device, "ps_border_corner");
         let ps_border_edge = create_prim_programs(&mut device, "ps_border_edge");
 
-        let (ps_gradient, ps_angle_gradient, ps_radial_gradient) =
+        /*let (ps_gradient, ps_angle_gradient, ps_radial_gradient) =
             if options.enable_dithering {
                 (create_prim_programs(&mut device, "ps_gradient_dithering"),
                  create_prim_programs(&mut device, "ps_angle_gradient_dithering"),
@@ -1365,9 +1368,10 @@ impl Renderer {
                 (create_prim_programs(&mut device, "ps_gradient"),
                  create_prim_programs(&mut device, "ps_angle_gradient"),
                  create_prim_programs(&mut device, "ps_radial_gradient"))
-            };
+            };*/
+        let ps_gradient = create_prim_programs(&mut device, "ps_gradient");
 
-        let ps_line = create_prim_programs(&mut device, "ps_line");
+        /*let ps_line = create_prim_programs(&mut device, "ps_line");
 
         let ps_blend = create_program(&mut device, "ps_blend");
         let ps_hw_composite = create_program(&mut device, "ps_hardware_composite");
@@ -1479,14 +1483,14 @@ impl Renderer {
             cs_clip_border,
             cs_clip_image,*/
             ps_rectangle,
-           /* ps_rectangle_clip,
+            //ps_rectangle_clip,
             ps_text_run,
             ps_image,
-            ps_yuv_image,
+            //ps_yuv_image,
             ps_border_corner,
             ps_border_edge,
             ps_gradient,
-            ps_angle_gradient,
+            /*ps_angle_gradient,
             ps_radial_gradient,
             ps_blend,
             ps_hw_composite,
@@ -1910,13 +1914,13 @@ impl Renderer {
         self.cs_clip_border.reset_upload_offset();
         self.cs_clip_image.reset_upload_offset();*/
         self.ps_rectangle.reset_upload_offset();
-        /*self.ps_rectangle_clip.reset_upload_offset();
+        //self.ps_rectangle_clip.reset_upload_offset();
         self.ps_text_run.reset_upload_offset();
         self.ps_image.reset_upload_offset();
         self.ps_border_corner.reset_upload_offset();
         self.ps_border_edge.reset_upload_offset();
         self.ps_gradient.reset_upload_offset();
-        self.ps_angle_gradient.reset_upload_offset();
+        /*self.ps_angle_gradient.reset_upload_offset();
         self.ps_radial_gradient.reset_upload_offset();
         self.ps_blend.reset_upload_offset();
         self.ps_hw_composite.reset_upload_offset();
@@ -2086,17 +2090,17 @@ impl Renderer {
                 }
                 TransformBatchKind::TextRun(..) => {
                     unreachable!("bug: text batches are special cased");
-                }
+                }*/
                 TransformBatchKind::Image(image_buffer_kind) => {
                     (self.ps_image.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_IMAGE)
                 }
-                TransformBatchKind::YuvImage(image_buffer_kind, format, color_space) => {
+                /*TransformBatchKind::YuvImage(image_buffer_kind, format, color_space) => {
                     let shader_index = Renderer::get_yuv_shader_index(image_buffer_kind,
                                                                       format,
                                                                       color_space,
                                                                       self.ps_yuv_image.len());
                     (self.ps_yuv_image[shader_index].get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_YUV_IMAGE)
-                }
+                }*/
                 TransformBatchKind::BorderCorner => {
                     (self.ps_border_corner.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_BORDER_CORNER)
                 }
@@ -2106,7 +2110,7 @@ impl Renderer {
                 TransformBatchKind::AlignedGradient => {
                     (self.ps_gradient.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_GRADIENT)
                 }
-                TransformBatchKind::AngleGradient => {
+                /*TransformBatchKind::AngleGradient => {
                     (self.ps_angle_gradient.get(transform_kind)  as &mut BindDraw, GPU_TAG_PRIM_ANGLE_GRADIENT)
                 }
                 TransformBatchKind::RadialGradient => {

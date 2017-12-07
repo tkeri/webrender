@@ -11,9 +11,11 @@ extern crate winit;
 mod boilerplate;
 
 use boilerplate::Example;
-use winit::TouchPhase;
 use std::collections::HashMap;
-use webrender::api::*;
+use webrender::api::{self, DeviceIntPoint, DisplayListBuilder, DocumentId, LayoutSize, PipelineId,
+                     RenderApi, ResourceUpdates, GradientStop, LayoutPoint, ExtendMode, ColorU, LayoutRect};
+
+
 
 #[derive(Debug)]
 enum Gesture {
@@ -172,17 +174,20 @@ impl Example for App {
               layout_size: LayoutSize,
               _pipeline_id: PipelineId,
               _document_id: DocumentId) {
-        let bounds = LayoutRect::new(LayoutPoint::zero(), layout_size);
-        builder.push_stacking_context(ScrollPolicy::Scrollable,
-                                      bounds,
-                                      None,
-                                      TransformStyle::Flat,
-                                      None,
-                                      MixBlendMode::Normal,
-                                      Vec::new());
+        let bounds = api::LayoutRect::new(api::LayoutPoint::zero(), layout_size);
+        let info = api::LayoutPrimitiveInfo::new(bounds);
+        builder.push_stacking_context(
+            &info,
+            api::ScrollPolicy::Scrollable,
+            None,
+            api::TransformStyle::Flat,
+            None,
+            api::MixBlendMode::Normal,
+            Vec::new(),
+        );
 
-        let id = builder.define_clip(None, bounds, vec![], None);
-        builder.push_clip_id(id);
+        //let id = builder.define_clip(None, bounds, vec![], None);
+        //builder.push_clip_id(id);
         let stops = vec![
             GradientStop {
                 offset: 0.0,
@@ -197,9 +202,8 @@ impl Example for App {
                                                LayoutPoint::new(0.0, 300.0),
                                                stops,
                                                ExtendMode::Clamp);
-
-        builder.push_gradient(LayoutRect::new(LayoutPoint::new(30.0, 100.0), LayoutSize::new(300.0, 300.0)),
-                              None,
+        let info1 = api::LayoutPrimitiveInfo::new(LayoutRect::new(LayoutPoint::new(30.0, 100.0), LayoutSize::new(300.0, 300.0)));
+        builder.push_gradient(&info1,
                               gradient,
                               layout_size,
                               LayoutSize::zero());
@@ -213,19 +217,18 @@ impl Example for App {
                 color: ColorU::new(255, 0u8, 0u8, 255u8).into(),
             },
         ];
-
+        let info2 = api::LayoutPrimitiveInfo::new(LayoutRect::new(LayoutPoint::new(400.0, 100.0), LayoutSize::new(300.0, 300.0)));
         let gradient = builder.create_gradient(LayoutPoint::new(0.0, 0.0),
                                                LayoutPoint::new(0.0, 300.0),
                                                stops,
                                                ExtendMode::Clamp);
 
-        builder.push_gradient(LayoutRect::new(LayoutPoint::new(400.0, 100.0), LayoutSize::new(300.0, 300.0)),
-                              None,
+        builder.push_gradient(&info2,
                               gradient,
                               layout_size,
                               LayoutSize::zero());
 
-        builder.pop_clip_id();
+        //builder.pop_clip_id();
         builder.pop_stacking_context();
     }
 

@@ -2,26 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+extern crate app_units;
+extern crate euclid;
 extern crate webrender;
-extern crate rayon;
 extern crate winit;
+extern crate rayon;
 
 #[path="common/boilerplate_dx.rs"]
 mod boilerplate;
 
 use boilerplate::{Example, HandyDandyRectBuilder};
-use rayon::ThreadPool;
 use rayon::Configuration as ThreadPoolConfig;
+use rayon::ThreadPool;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::sync::mpsc::{channel, Sender, Receiver};
-use webrender::api::{self, RenderApi, DisplayListBuilder, ResourceUpdates, LayoutSize, PipelineId, DocumentId};
+use std::fs::File;
+use std::io::Read;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use webrender::api::{self, DeviceUintRect, DeviceIntPoint, DisplayListBuilder, DocumentId, LayoutSize, PipelineId,
+                     RenderApi, ResourceUpdates};
 
-// This example shows how to implement a very basic BlobImageRenderer that can only render
-// a checkerboard pattern.
 
-// The deserialized command list internally used by this example is just a color.
+
 type ImageRenderingCommands = api::ColorU;
 
 // Serialize/deserialze the blob.
@@ -37,15 +40,15 @@ fn deserialize_blob(blob: &[u8]) -> Result<ImageRenderingCommands, ()> {
         (Some(&r), Some(&g), Some(&b), Some(&a)) => Ok(api::ColorU::new(r, g, b, a)),
         (Some(&a), None, None, None) => Ok(api::ColorU::new(a, a, a, a)),
         _ => Err(()),
-    }
+    };
 }
 
 // This is the function that applies the deserialized drawing commands and generates
 // actual image data.
 fn render_blob(
     commands: Arc<ImageRenderingCommands>,
-   descriptor: &api::BlobImageDescriptor,
-   tile: Option<api::TileOffset>
+    descriptor: &api::BlobImageDescriptor,
+    tile: Option<api::TileOffset>,
 ) -> api::BlobImageResult {
     let color = *commands;
 
@@ -60,15 +63,19 @@ fn render_blob(
         None => true,
     };
 
-    for y in 0..descriptor.height {
-        for x in 0..descriptor.width {
+    for y in 0 .. descriptor.height {
+        for x in 0 .. descriptor.width {
             // Apply the tile's offset. This is important: all drawing commands should be
             // translated by this offset to give correct results with tiled blob images.
             let x2 = x + descriptor.offset.x as u32;
             let y2 = y + descriptor.offset.y as u32;
 
             // Render a simple checkerboard pattern
-            let checker = if (x2 % 20 >= 10) != (y2 % 20 >= 10) { 1 } else { 0 };
+            let checker = if (x2 % 20 >= 10) != (y2 % 20 >= 10) {
+                1
+            } else {
+                0
+            };
             // ..nested in the per-tile cherkerboard pattern
             let tc = if tile_checker { 0 } else { (1 - checker) * 40 };
 
@@ -83,10 +90,9 @@ fn render_blob(
                     texels.push(color.a * checker + tc);
                 }
                 _ => {
-                    return Err(api::BlobImageError::Other(format!(
-                        "Usupported image format {:?}",
-                        descriptor.format
-                    )));
+                    return Err(api::BlobImageError::Other(
+                        format!("Usupported image format {:?}", descriptor.format),
+                    ));
                 }
             }
         }
@@ -97,6 +103,172 @@ fn render_blob(
         width: descriptor.width,
         height: descriptor.height,
     })
+}
+
+#[derive(Debug)]
+enum Gesture {
+    None,
+    Pan,
+    Zoom,
+}
+
+#[derive(Debug)]
+struct Touch {
+    id: u64,
+    start_x: f32,
+    start_y: f32,
+    current_x: f32,
+    current_y: f32,
+}
+
+fn dist(x0: f32, y0: f32, x1: f32, y1: f32) -> f32 {
+    let dx = x0 - x1;
+    let dy = y0 - y1;
+    ((dx * dx) + (dy * dy)).sqrt()
+}
+
+impl Touch {
+    fn distance_from_start(&self) -> f32 {
+        dist(self.start_x, self.start_y, self.current_x, self.current_y)
+    }
+
+    fn initial_distance_from_other(&self, other: &Touch) -> f32 {
+        dist(self.start_x, self.start_y, other.start_x, other.start_y)
+    }
+
+    fn current_distance_from_other(&self, other: &Touch) -> f32 {
+        dist(self.current_x, self.current_y, other.current_x, other.current_y)
+    }
+}
+
+struct TouchState {
+    active_touches: HashMap<u64, Touch>,
+    current_gesture: Gesture,
+    start_zoom: f32,
+    current_zoom: f32,
+    start_pan: DeviceIntPoint,
+    current_pan: DeviceIntPoint,
+}
+
+enum TouchResult {
+    None,
+    Pan(DeviceIntPoint),
+    Zoom(f32),
+}
+
+impl TouchState {
+    fn new() -> TouchState {
+        TouchState {
+            active_touches: HashMap::new(),
+            current_gesture: Gesture::None,
+            start_zoom: 1.0,
+            current_zoom: 1.0,
+            start_pan: DeviceIntPoint::zero(),
+            current_pan: DeviceIntPoint::zero(),
+        }
+    }
+
+    fn handle_event(&mut self, touch: winit::Touch) -> TouchResult {
+        /*match touch.phase {
+            TouchPhase::Started => {
+                debug_assert!(!self.active_touches.contains_key(&touch.id));
+                self.active_touches.insert(touch.id, Touch {
+                    id: touch.id,
+                    start_x: touch.location.0 as f32,
+                    start_y: touch.location.1 as f32,
+                    current_x: touch.location.0 as f32,
+                    current_y: touch.location.1 as f32,
+                });
+                self.current_gesture = Gesture::None;
+            }
+            TouchPhase::Moved => {
+                match self.active_touches.get_mut(&touch.id) {
+                    Some(active_touch) => {
+                        active_touch.current_x = touch.location.0 as f32;
+                        active_touch.current_y = touch.location.1 as f32;
+                    }
+                    None => panic!("move touch event with unknown touch id!")
+                }
+
+                match self.current_gesture {
+                    Gesture::None => {
+                        let mut over_threshold_count = 0;
+                        let active_touch_count = self.active_touches.len();
+
+                        for (_, touch) in &self.active_touches {
+                            if touch.distance_from_start() > 8.0 {
+                                over_threshold_count += 1;
+                            }
+                        }
+
+                        if active_touch_count == over_threshold_count {
+                            if active_touch_count == 1 {
+                                self.start_pan = self.current_pan;
+                                self.current_gesture = Gesture::Pan;
+                            } else if active_touch_count == 2 {
+                                self.start_zoom = self.current_zoom;
+                                self.current_gesture = Gesture::Zoom;
+                            }
+                        }
+                    }
+                    Gesture::Pan => {
+                        let keys: Vec<u64> = self.active_touches.keys().cloned().collect();
+                        debug_assert!(keys.len() == 1);
+                        let active_touch = &self.active_touches[&keys[0]];
+                        let x = active_touch.current_x - active_touch.start_x;
+                        let y = active_touch.current_y - active_touch.start_y;
+                        self.current_pan.x = self.start_pan.x + x.round() as i32;
+                        self.current_pan.y = self.start_pan.y + y.round() as i32;
+                        return TouchResult::Pan(self.current_pan);
+                    }
+                    Gesture::Zoom => {
+                        let keys: Vec<u64> = self.active_touches.keys().cloned().collect();
+                        debug_assert!(keys.len() == 2);
+                        let touch0 = &self.active_touches[&keys[0]];
+                        let touch1 = &self.active_touches[&keys[1]];
+                        let initial_distance = touch0.initial_distance_from_other(touch1);
+                        let current_distance = touch0.current_distance_from_other(touch1);
+                        self.current_zoom = self.start_zoom * current_distance / initial_distance;
+                        return TouchResult::Zoom(self.current_zoom);
+                    }
+                }
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                self.active_touches.remove(&touch.id).unwrap();
+                self.current_gesture = Gesture::None;
+            }
+        }*/
+
+        TouchResult::None
+    }
+}
+
+fn load_file(name: &str) -> Vec<u8> {
+    let mut file = File::open(name).unwrap();
+    let mut buffer = vec![];
+    file.read_to_end(&mut buffer).unwrap();
+    buffer
+}
+
+fn main() {
+    let worker_config =
+        ThreadPoolConfig::new().thread_name(|idx| format!("WebRender:Worker#{}", idx));
+
+    let workers = Arc::new(ThreadPool::new(worker_config).unwrap());
+
+    let opts = webrender::RendererOptions {
+        workers: Some(Arc::clone(&workers)),
+        // Register our blob renderer, so that WebRender integrates it in the resource cache..
+        // Share the same pool of worker threads between WebRender and our blob renderer.
+        blob_image_renderer: Some(Box::new(CheckerboardRenderer::new(Arc::clone(&workers)))),
+        ..Default::default()
+    };
+
+    let mut app = App {
+        touch_state: TouchState::new(),
+    };
+
+    boilerplate::main_wrapper(&mut app, Some(opts));
 }
 
 struct CheckerboardRenderer {
@@ -136,24 +308,28 @@ impl CheckerboardRenderer {
 
 impl api::BlobImageRenderer for CheckerboardRenderer {
     fn add(&mut self, key: api::ImageKey, cmds: api::BlobImageData, _: Option<api::TileSize>) {
-        self.image_cmds.insert(key, Arc::new(deserialize_blob(&cmds[..]).unwrap()));
+        self.image_cmds
+            .insert(key, Arc::new(deserialize_blob(&cmds[..]).unwrap()));
     }
 
-    fn update(&mut self, key: api::ImageKey, cmds: api::BlobImageData) {
+    fn update(&mut self, key: api::ImageKey, cmds: api::BlobImageData, _dirty_rect: Option<DeviceUintRect>) {
         // Here, updating is just replacing the current version of the commands with
         // the new one (no incremental updates).
-        self.image_cmds.insert(key, Arc::new(deserialize_blob(&cmds[..]).unwrap()));
+        self.image_cmds
+            .insert(key, Arc::new(deserialize_blob(&cmds[..]).unwrap()));
     }
 
     fn delete(&mut self, key: api::ImageKey) {
         self.image_cmds.remove(&key);
     }
 
-    fn request(&mut self,
-               _resources: &api::BlobImageResources,
-               request: api::BlobImageRequest,
-               descriptor: &api::BlobImageDescriptor,
-               _dirty_rect: Option<api::DeviceUintRect>) {
+    fn request(
+        &mut self,
+        _resources: &api::BlobImageResources,
+        request: api::BlobImageRequest,
+        descriptor: &api::BlobImageDescriptor,
+        _dirty_rect: Option<api::DeviceUintRect>,
+    ) {
         // This method is where we kick off our rendering jobs.
         // It should avoid doing work on the calling thread as much as possible.
         // In this example we will use the thread pool to render individual tiles.
@@ -198,7 +374,7 @@ impl api::BlobImageRenderer for CheckerboardRenderer {
         while let Ok((req, result)) = self.rx.recv() {
             if req == request {
                 // There it is!
-                return result
+                return result;
             }
             self.rendered_images.insert(req, Some(result));
         }
@@ -206,12 +382,12 @@ impl api::BlobImageRenderer for CheckerboardRenderer {
         // If we break out of the loop above it means the channel closed unexpectedly.
         Err(api::BlobImageError::Other("Channel closed".into()))
     }
-    fn delete_font(&mut self, _font: api::FontKey) { }
-    fn delete_font_instance(&mut self, _instance: api::FontInstanceKey) { }
+    fn delete_font(&mut self, _font: api::FontKey) {}
+    fn delete_font_instance(&mut self, _instance: api::FontInstanceKey) {}
 }
 
 struct App {
-
+    touch_state: TouchState,
 }
 
 impl Example for App {
@@ -239,26 +415,29 @@ impl Example for App {
         );
 
         let bounds = api::LayoutRect::new(api::LayoutPoint::zero(), layout_size);
-        builder.push_stacking_context(api::ScrollPolicy::Scrollable,
-                                      bounds,
-                                      None,
-                                      api::TransformStyle::Flat,
-                                      None,
-                                      api::MixBlendMode::Normal,
-                                      Vec::new());
+        let info = api::LayoutPrimitiveInfo::new(bounds);
+        builder.push_stacking_context(
+            &info,
+            api::ScrollPolicy::Scrollable,
+            None,
+            api::TransformStyle::Flat,
+            None,
+            api::MixBlendMode::Normal,
+            Vec::new(),
+        );
 
+        let info = api::LayoutPrimitiveInfo::new((30, 30).by(500, 500));
         builder.push_image(
-            (30, 30).by(500, 500),
-            Some(api::LocalClip::from(bounds)),
+            &info,
             api::LayoutSize::new(500.0, 500.0),
             api::LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
             blob_img1,
         );
 
+        let info = api::LayoutPrimitiveInfo::new((600, 600).by(200, 200));
         builder.push_image(
-            (600, 600).by(200, 200),
-            Some(api::LocalClip::from(bounds)),
+            &info,
             api::LayoutSize::new(200.0, 200.0),
             api::LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
@@ -269,29 +448,26 @@ impl Example for App {
     }
 
     fn on_event(&mut self,
-                _event: winit::Event,
-                _api: &RenderApi,
-                _document_id: DocumentId) -> bool {
+                event: winit::Event,
+                api: &RenderApi,
+                document_id: DocumentId) -> bool {
+        /*match event {
+            winit::Event::Touch(touch) => {
+                match self.touch_state.handle_event(touch) {
+                    TouchResult::Pan(pan) => {
+                        api.set_pan(document_id, pan);
+                        api.generate_frame(document_id, None);
+                    }
+                    TouchResult::Zoom(zoom) => {
+                        api.set_pinch_zoom(document_id, ZoomFactor::new(zoom));
+                        api.generate_frame(document_id, None);
+                    }
+                    TouchResult::None => {}
+                }
+            }
+            _ => ()
+        }*/
+
         false
     }
-}
-
-fn main() {
-    let worker_config = ThreadPoolConfig::new().thread_name(|idx|{
-        format!("WebRender:Worker#{}", idx)
-    });
-
-    let workers = Arc::new(ThreadPool::new(worker_config).unwrap());
-
-    let opts = webrender::RendererOptions {
-        workers: Some(Arc::clone(&workers)),
-        // Register our blob renderer, so that WebRender integrates it in the resource cache..
-        // Share the same pool of worker threads between WebRender and our blob renderer.
-        blob_image_renderer: Some(Box::new(CheckerboardRenderer::new(Arc::clone(&workers)))),
-        .. Default::default()
-    };
-
-    let mut app = App {};
-
-    boilerplate::main_wrapper(&mut app, Some(opts));
 }
