@@ -376,6 +376,8 @@ impl<'a> ReftestHarness<'a> {
         // wait for the frame
         self.rx.recv().unwrap();
         self.wrench.render();
+        self.window.swap_buffers();
+        self.wrench.render();
 
         let window_size = self.window.get_inner_size_pixels();
         assert!(size.width <= window_size.0 && size.height <= window_size.1);
