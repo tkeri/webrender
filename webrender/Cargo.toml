@@ -36,12 +36,12 @@ serde = { optional = true, version = "1.0" }
 serde_derive = { optional = true, version = "1.0" }
 servo-glutin = "0.12"
 rand = "0.3"
-gfx = { git = 'https://github.com/zakorgy/gfx', branch = 'pre-ll' }
-gfx_device_gl = { git = 'https://github.com/zakorgy/gfx', branch = 'pre-ll' }
+gfx = { git = 'https://github.com/gfx-rs/gfx', branch = 'pre-ll' }
+gfx_device_gl = { git = 'https://github.com/gfx-rs/gfx', branch = 'pre-ll' }
 
 [target.'cfg(windows)'.dependencies]
-gfx_device_dx11 = { git = 'https://github.com/zakorgy/gfx', branch = 'pre-ll', optional = true}
-gfx_window_dxgi = { git = 'https://github.com/zakorgy/gfx', branch = 'pre-ll', optional = true}
+gfx_device_dx11 = { git = 'https://github.com/gfx-rs/gfx', branch = 'pre-ll', optional = true}
+gfx_window_dxgi = { git = 'https://github.com/gfx-rs/gfx', branch = 'pre-ll', optional = true}
 winit = "0.9"
 
 [dev-dependencies]
