@@ -354,6 +354,7 @@ impl Device {
         sampler_info.filter = gfx::texture::FilterMethod::Bilinear;
         let sampler_linear = params.factory.create_sampler(sampler_info);
 
+        #[cfg(not(feature = "dx11"))]
         let dither_matrix: [u8; 64] = [
             00, 48, 12, 60, 03, 51, 15, 63,
             32, 16, 44, 28, 35, 19, 47, 31,
@@ -363,6 +364,18 @@ impl Device {
             34, 18, 46, 30, 33, 17, 45, 29,
             10, 58, 06, 54, 09, 57, 05, 53,
             42, 26, 38, 22, 41, 25, 37, 21
+        ];
+
+        #[cfg(all(target_os = "windows", feature="dx11"))]
+        let dither_matrix: [u8; 64] = [
+            42, 26, 38, 22, 41, 25, 37, 21,
+            10, 58, 06, 54, 09, 57, 05, 53,
+            34, 18, 46, 30, 33, 17, 45, 29,
+            02, 50, 14, 62, 01, 49, 13, 61,
+            40, 24, 36, 20, 43, 27, 39, 23,
+            08, 56, 04, 52, 11, 59, 07, 55,
+            32, 16, 44, 28, 35, 19, 47, 31,
+            00, 48, 12, 60, 03, 51, 15, 63
         ];
         let dither_tex = DataTexture::create(&mut params.factory, [8, 8], Some((&[&dither_matrix], gfx::texture::Mipmap::Provided))).unwrap();
         let dummy_cache_a8_tex = CacheTexture::create(&mut params.factory, [1, 1]).unwrap();
