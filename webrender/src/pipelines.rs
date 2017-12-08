@@ -46,26 +46,26 @@ const PREM_ALPHA: Blend = Blend {
 const SUBPIXEL_PASS0: Blend = Blend {
     color: BlendChannel {
         equation: Equation::Add,
-        source: Factor::One,
-        destination: Factor::One,
+        source: Factor::Zero,
+        destination: Factor::OneMinus(BlendValue::SourceColor),
     },
     alpha: BlendChannel {
         equation: Equation::Add,
-        source: Factor::One,
-        destination: Factor::One,
+        source: Factor::Zero,
+        destination: Factor::OneMinus(BlendValue::SourceColor),
     },
 };
 
 const SUBPIXEL_PASS1: Blend = Blend {
     color: BlendChannel {
         equation: Equation::Add,
-        source: Factor::Zero,
-        destination: Factor::OneMinus(BlendValue::SourceColor),
+        source: Factor::One,
+        destination: Factor::One,
     },
     alpha: BlendChannel {
         equation: Equation::Add,
-        source: Factor::Zero,
-        destination: Factor::OneMinus(BlendValue::SourceColor),
+        source: Factor::One,
+        destination: Factor::One,
     },
 };
 
