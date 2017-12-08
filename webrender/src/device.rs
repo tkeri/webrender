@@ -870,7 +870,10 @@ impl Device {
 }
 
 pub fn convert_data_to_rgba8(width: usize, height: usize, data: &[u8], orig_stride: usize) -> Vec<u8> {
-    let mut new_data = vec![0u8; width * height * RGBA_STRIDE];
+    let mut new_data = Vec::new();
+    for i in 0..(width * height) {
+        new_data.extend_from_slice(&[0u8, 0u8, 0u8, 255u8])
+    }
     for s in 0..orig_stride {
         for h in 0..height {
             for w in 0..width {
