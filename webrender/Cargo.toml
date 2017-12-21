@@ -12,8 +12,8 @@ freetype-lib = ["freetype/servo-freetype-sys"]
 profiler = ["thread_profiler/thread_profiler"]
 debugger = ["ws", "serde_json", "serde", "serde_derive"]
 query = []
-gl = ["gfx-backend-gl"]
-vulkan = ["gfx-backend-vulkan"]
+gl = ["gfx-backend-gl"] #gl = []
+vulkan = ["gfx-backend-vulkan"] #vulkan = ["gfx-backend-vulkan"]
 
 [dependencies]
 app_units = "0.5.6"
@@ -36,8 +36,7 @@ serde = { optional = true, version = "1.0" }
 serde_derive = { optional = true, version = "1.0" }
 servo-glutin = "0.12"
 rand = "0.3"
-#winit = "0.8"
-winit = { git = "https://github.com/tomaka/winit.git" }
+winit = "0.9"
 gfx-hal = { path = "../../gfx/src/hal", version = "0.1" }
 
 [dependencies.gfx-backend-gl]
@@ -57,6 +56,9 @@ angle = {git = "https://github.com/servo/angle", branch = "servo"}
 env_logger = "0.4"
 gleam = "0.4.8"
 rand = "0.3"                # for the benchmarks
+winit = "0.9"
+gfx-hal = { path = "../../gfx/src/hal", version = "0.1" }
+gfx-backend-vulkan = { path = "../../gfx/src/backend/vulkan" }
 
 [target.'cfg(any(target_os = "android", all(unix, not(target_os = "macos"))))'.dependencies]
 freetype = { version = "0.3", default-features = false }

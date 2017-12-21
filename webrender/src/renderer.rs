@@ -1213,8 +1213,7 @@ impl Renderer {
         mut options: RendererOptions,
         mut window: &winit::Window,
         instance: &back::Instance,
-        //adapter: &gfx::Adapter<back::Backend>,
-        //surface: gfx::Surface<back::Backend>,
+        surface: &mut <back::Backend as gfx::Backend>::Surface,
     ) -> Result<(Renderer, RenderApiSender), RendererError> {
         let (api_tx, api_rx) = try!{ channel::msg_channel() };
         let (payload_tx, payload_rx) = try!{ channel::payload_channel() };
@@ -1231,8 +1230,8 @@ impl Renderer {
             options.resource_override_path.clone(),
             window,
             instance,
+            surface,
             //adapter,
-            //surface,
             Box::new(file_watch_handler),
         );
 

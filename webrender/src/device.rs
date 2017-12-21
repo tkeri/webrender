@@ -441,6 +441,7 @@ impl<B: gfx::Backend> Device<B> {
         resource_override_path: Option<PathBuf>,
         window: &winit::Window,
         instance: &back::Instance,
+        surface: &mut <back::Backend as gfx::Backend>::Surface,
         _file_changed_handler: Box<FileWatcherHandler>)
     -> Device<back::Backend> {
         let max_texture_size = 1024;
@@ -450,7 +451,6 @@ impl<B: gfx::Backend> Device<B> {
         let pixel_height = window_size.1 as u16;
 
         // instantiate backend
-        let mut surface = instance.create_surface(window);
         let mut adapters = instance.enumerate_adapters();
 
         for adapter in &adapters {
@@ -488,7 +488,7 @@ impl<B: gfx::Backend> Device<B> {
         println!("{:?}", surface_format);
         let swap_config = SwapchainConfig::new()
             .with_color(surface_format);
-        let (mut swap_chain, backbuffer) = surface.build_swapchain(swap_config, &queue_group.queues[0]);
+        let (mut swap_chain, backbuffer) = device.create_swapchain(surface, swap_config);
 
         let render_pass = {
             let attachment = pass::Attachment {
@@ -642,12 +642,12 @@ impl<B: gfx::Backend> Device<B> {
             ],
         );
 
-        let pipeline_layout = device.create_pipeline_layout(&[&set_layout]);
+        let pipeline_layout = device.create_pipeline_layout(&[&set_layout], &[]);
 
         let pipelines = {
             let (vs_entry, fs_entry) = (
-                pso::EntryPoint::<back::Backend> { entry: ENTRY_NAME, module: &vs_module },
-                pso::EntryPoint::<back::Backend> { entry: ENTRY_NAME, module: &fs_module },
+                pso::EntryPoint::<back::Backend> { entry: ENTRY_NAME, module: &vs_module, specialization: &[] },
+                pso::EntryPoint::<back::Backend> { entry: ENTRY_NAME, module: &fs_module, specialization: &[] },
             );
 
             let shader_entries = pso::GraphicsShaderSet {
@@ -736,7 +736,7 @@ impl<B: gfx::Backend> Device<B> {
         let buffer_stride = std::mem::size_of::<Vertex>() as u64;
         let buffer_len = QUAD.len() as u64 * buffer_stride;
 
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::Usage::VERTEX).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, buffer::Usage::VERTEX).unwrap();
         println!("{:?}", buffer_unbound);
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
         let upload_type =
@@ -761,7 +761,7 @@ impl<B: gfx::Backend> Device<B> {
         //let ibuffer_len = MAX_INSTANCE_COUNT * ibuffer_stride;
         let ibuffer_len = 6 * ibuffer_stride;
 
-        let ibuffer_unbound = device.create_buffer(ibuffer_len, ibuffer_stride, buffer::Usage::VERTEX).unwrap();
+        let ibuffer_unbound = device.create_buffer(ibuffer_len, buffer::Usage::VERTEX).unwrap();
         println!("{:?}", ibuffer_unbound);
         let ibuffer_req = device.get_buffer_requirements(&ibuffer_unbound);
         let iupload_type =
@@ -807,7 +807,7 @@ impl<B: gfx::Backend> Device<B> {
 
         let lbuffer_stride = std::mem::size_of::<Locals>() as u64;
         let lbuffer_len = lbuffer_stride;
-        let lbuffer_unbound = device.create_buffer(lbuffer_len, lbuffer_stride, buffer::Usage::UNIFORM).unwrap();
+        let lbuffer_unbound = device.create_buffer(lbuffer_len, buffer::Usage::UNIFORM).unwrap();
         let lbuffer_req = device.get_buffer_requirements(&lbuffer_unbound);
         let mem_type =
             memory_types.iter().find(|mem_type| {
@@ -854,7 +854,7 @@ impl<B: gfx::Backend> Device<B> {
 
         let layers_image_upload_memory = device.allocate_memory(upload_type, upload_size).unwrap();
         let layers_image_upload_buffer = {
-            let buffer = device.create_buffer(upload_size, image_stride as u64, buffer::Usage::TRANSFER_SRC).unwrap();
+            let buffer = device.create_buffer(upload_size, buffer::Usage::TRANSFER_SRC).unwrap();
             device.bind_buffer_memory(&layers_image_upload_memory, 0, buffer).unwrap()
         };
 
@@ -884,7 +884,7 @@ impl<B: gfx::Backend> Device<B> {
 
         let resource_cache_image_upload_memory = device.allocate_memory(upload_type, upload_size).unwrap();
         let resource_cache_image_upload_buffer = {
-            let buffer = device.create_buffer(upload_size, image_stride as u64, buffer::Usage::TRANSFER_SRC).unwrap();
+            let buffer = device.create_buffer(upload_size, buffer::Usage::TRANSFER_SRC).unwrap();
             device.bind_buffer_memory(&resource_cache_image_upload_memory, 0, buffer).unwrap()
         };
 
@@ -914,7 +914,7 @@ impl<B: gfx::Backend> Device<B> {
 
         let render_tasks_image_upload_memory = device.allocate_memory(upload_type, upload_size).unwrap();
         let render_tasks_image_upload_buffer = {
-            let buffer = device.create_buffer(upload_size, image_stride as u64, buffer::Usage::TRANSFER_SRC).unwrap();
+            let buffer = device.create_buffer(upload_size, buffer::Usage::TRANSFER_SRC).unwrap();
             device.bind_buffer_memory(&render_tasks_image_upload_memory, 0, buffer).unwrap()
         };
 
