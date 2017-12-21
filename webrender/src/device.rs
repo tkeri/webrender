@@ -1647,46 +1647,55 @@ impl<B: gfx::Backend> Device<B> {
 
 //impl<B: gfx::Backend> Drop for Device<B> {
 //    fn drop(&mut self) {
-    pub fn cleanup(&mut self) {
+    pub fn cleanup(mut self) {
         println!("Dropping!");
         // cleanup!
-        //self.device.destroy_command_pool(self.command_pool.downgrade());
-        //let _ = &self.command_pool;
-        /*self.device.destroy_descriptor_pool(self.desc_pool);
+        self.device.destroy_command_pool(self.command_pool.downgrade());
+        self.device.destroy_descriptor_pool(self.desc_pool);
         self.device.destroy_descriptor_set_layout(self.set_layout);
 
-        #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal", feature = "gl"))]
         {
-            self.device.destroy_shader_module(vs_module);
-            self.device.destroy_shader_module(fs_module);
+            self.device.destroy_shader_module(self.vs_module);
+            self.device.destroy_shader_module(self.fs_module);
         }
-        #[cfg(all(feature = "metal", feature = "metal_argument_buffer"))]
-        self.device.destroy_shader_module(shader_lib);
 
-        self.device.destroy_buffer(self.image_upload_buffer);
-        self.device.destroy_image(self.image_logo);
-        self.device.destroy_image_view(self.image_srv);
-        self.device.destroy_sampler(self.sampler);
+        self.device.destroy_buffer(self.layers_image_upload_buffer);
+        self.device.destroy_buffer(self.render_tasks_image_upload_buffer);
+        self.device.destroy_buffer(self.resource_cache_image_upload_buffer);
+        self.device.destroy_buffer(self.vertex_buffer);
+        self.device.destroy_buffer(self.instance_buffer);
+        self.device.destroy_buffer(self.locals_buffer);
+
+        self.device.destroy_image(self.layers_image);
+        self.device.destroy_image(self.render_tasks_image);
+        self.device.destroy_image(self.resource_cache_image);
+
+        self.device.destroy_image_view(self.layers_image_srv);
+        self.device.destroy_image_view(self.render_tasks_image_srv);
+        self.device.destroy_image_view(self.resource_cache_image_srv);
+
+        self.device.destroy_sampler(self.sampler.0);
+        self.device.destroy_sampler(self.sampler.1);
         self.device.destroy_pipeline_layout(self.pipeline_layout);
-        self.device.free_memory(self.image_memory);
-        self.device.free_memory(self.image_upload_memory);*/
+
+        self.device.free_memory(self.layers_image_upload_memory);
+        self.device.free_memory(self.render_tasks_image_upload_memory);
+        self.device.free_memory(self.resource_cache_image_upload_memory);
+        self.device.free_memory(self.buffer_memory);
+        self.device.free_memory(self.ibuffer_memory);
+        self.device.free_memory(self.lbuffer_memory);
+
         //self.device.destroy_semaphore(self.frame_semaphore);
-        //let _ = &self.frame_semaphore;
-        //self.device.destroy_buffer(self.vertex_buffer);
-        let _ = &self.vertex_buffer;
-        //self.device.free_memory(self.buffer_memory);
-        let _ = &self.buffer_memory;
-        //self.device.destroy_renderpass(self.render_pass);
-        let _ = &self.render_pass;
-        for pipeline in self.pipelines.drain(..) {
+        self.device.destroy_renderpass(self.render_pass);
+        for pipeline in self.pipelines {
             if let Ok(pipeline) = pipeline {
                 self.device.destroy_graphics_pipeline(pipeline);
             }
         }
-        for framebuffer in self.framebuffers.drain(..) {
+        for framebuffer in self.framebuffers {
             self.device.destroy_framebuffer(framebuffer);
         }
-        for (image, rtv) in self.frame_images.drain(..) {
+        for (image, rtv) in self.frame_images {
             self.device.destroy_image_view(rtv);
             self.device.destroy_image(image);
         }
