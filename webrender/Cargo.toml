@@ -37,17 +37,17 @@ serde_derive = { optional = true, version = "1.0" }
 servo-glutin = "0.12"
 rand = "0.3"
 winit = "0.9"
-gfx-hal = { path = "../../gfx/src/hal", version = "0.1" }
+gfx-hal = { git = "https://github.com/gfx-rs/gfx", rev = "5a16a51451b04c45c95999923b3f361df366e5d8" }
 
 [dependencies.gfx-backend-gl]
-path = "../../gfx/src/backend/gl"
-version = "0.1"
+git = "https://github.com/gfx-rs/gfx"
+rev = "5a16a51451b04c45c95999923b3f361df366e5d8"
 features = ["glutin"]
 optional = true
 
 [dependencies.gfx-backend-vulkan]
-path = "../../gfx/src/backend/vulkan"
-version = "0.1"
+git = "https://github.com/gfx-rs/gfx"
+rev = "5a16a51451b04c45c95999923b3f361df366e5d8"
 #features = ["glsl-to-spirv"]
 optional = true
 
@@ -57,8 +57,8 @@ env_logger = "0.4"
 gleam = "0.4.8"
 rand = "0.3"                # for the benchmarks
 winit = "0.9"
-gfx-hal = { path = "../../gfx/src/hal", version = "0.1" }
-gfx-backend-vulkan = { path = "../../gfx/src/backend/vulkan" }
+gfx-hal = { git = "https://github.com/gfx-rs/gfx", rev = "5a16a51451b04c45c95999923b3f361df366e5d8" }
+gfx-backend-vulkan = { git = "https://github.com/gfx-rs/gfx", rev = "5a16a51451b04c45c95999923b3f361df366e5d8" }
 
 [target.'cfg(any(target_os = "android", all(unix, not(target_os = "macos"))))'.dependencies]
 freetype = { version = "0.3", default-features = false }

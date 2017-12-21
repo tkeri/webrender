@@ -22,7 +22,7 @@ use rand::Rng;
 use std;
 use gfx;
 use gfx::{buffer, command, device as d, image as i, memory as m, pass, pso, pool};
-use gfx::{Device as BackendDevice, Instance, QueueFamily, Surface, Swapchain};
+use gfx::{Device as BackendDevice, Instance, PhysicalDevice, QueueFamily, Surface, Swapchain};
 use gfx::{
     DescriptorPool, Gpu, FrameSync, Primitive,
     Backbuffer, SwapchainConfig,
@@ -465,15 +465,15 @@ impl<B: gfx::Backend> Device<B> {
             .find(|format| format.1 == ChannelType::Srgb)
             .unwrap();
 
-        /*let mut gpu = adapter
-            .open_with(|family| {
-                if family.supports_graphics() && surface.supports_queue_family(family) {
-                    Some(1)
-                } else {
-                    None
-                }
-            });*/
-        let Gpu { device, mut queue_groups, memory_types, .. } =
+        let memory_types = adapter
+            .physical_device
+            .memory_properties()
+            .memory_types;
+        let limits = adapter
+            .physical_device
+            .get_limits();
+
+        let Gpu { device, mut queue_groups } =
             adapter.open_with(|family| {
                 if family.supports_graphics() {
                     Some(1)
@@ -846,7 +846,7 @@ impl<B: gfx::Backend> Device<B> {
 
         let (width, height) = (LAYER_TEXTURE_WIDTH as u32, 64u32);
         let kind = i::Kind::D2(width as i::Size, height as i::Size, i::AaMode::Single);
-        let row_alignment_mask = device.get_limits().min_buffer_copy_pitch_alignment as u32 - 1;
+        let row_alignment_mask = limits.min_buffer_copy_pitch_alignment as u32 - 1;
         let image_stride = 4usize;
         let row_pitch = (width * image_stride as u32 + row_alignment_mask) & !row_alignment_mask;
         let upload_size = (height * row_pitch) as u64;
@@ -876,7 +876,7 @@ impl<B: gfx::Backend> Device<B> {
 
         let (width, height) = (max_texture_size as u32, max_texture_size as u32);
         let kind = i::Kind::D2(width as i::Size, height as i::Size, i::AaMode::Single);
-        let row_alignment_mask = device.get_limits().min_buffer_copy_pitch_alignment as u32 - 1;
+        let row_alignment_mask = limits.min_buffer_copy_pitch_alignment as u32 - 1;
         let image_stride = 4usize;
         let row_pitch = (width * image_stride as u32 + row_alignment_mask) & !row_alignment_mask;
         let upload_size = (height * row_pitch) as u64;
@@ -906,7 +906,7 @@ impl<B: gfx::Backend> Device<B> {
 
         let (width, height) = (RENDER_TASK_TEXTURE_WIDTH as u32, TEXTURE_HEIGTH as u32);
         let kind = i::Kind::D2(width as i::Size, height as i::Size, i::AaMode::Single);
-        let row_alignment_mask = device.get_limits().min_buffer_copy_pitch_alignment as u32 - 1;
+        let row_alignment_mask = limits.min_buffer_copy_pitch_alignment as u32 - 1;
         let image_stride = 4usize;
         let row_pitch = (width * image_stride as u32 + row_alignment_mask) & !row_alignment_mask;
         let upload_size = (height * row_pitch) as u64;
