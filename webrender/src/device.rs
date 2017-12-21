@@ -367,16 +367,19 @@ pub struct Device<B: gfx::Backend> {
     pub layers_image_upload_memory: B::Memory,
     pub layers_image_upload_buffer: B::Buffer,
     pub layers_image: B::Image,
+    pub layers_image_memory: B::Memory,
     pub layers_image_srv: B::ImageView,
 
     pub render_tasks_image_upload_memory: B::Memory,
     pub render_tasks_image_upload_buffer: B::Buffer,
     pub render_tasks_image: B::Image,
+    pub render_tasks_image_memory: B::Memory,
     pub render_tasks_image_srv: B::ImageView,
 
     pub resource_cache_image_upload_memory: B::Memory,
     pub resource_cache_image_upload_buffer: B::Buffer,
     pub resource_cache_image: B::Image,
+    pub resource_cache_image_memory: B::Memory,
     pub resource_cache_image_srv: B::ImageView,
 
     pub sampler: (B::Sampler, B::Sampler),
@@ -869,9 +872,9 @@ impl<B: gfx::Backend> Device<B> {
                 memory_type.properties.contains(m::Properties::DEVICE_LOCAL)
             })
             .unwrap();
-        let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
+        let layers_image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
 
-        let layers_image = device.bind_image_memory(&image_memory, 0, image_unbound).unwrap();
+        let layers_image = device.bind_image_memory(&layers_image_memory, 0, image_unbound).unwrap();
         let layers_image_srv = device.create_image_view(&layers_image, ColorFormat::SELF, Swizzle::NO, COLOR_RANGE.clone()).unwrap();
 
         let (width, height) = (max_texture_size as u32, max_texture_size as u32);
@@ -899,9 +902,10 @@ impl<B: gfx::Backend> Device<B> {
                 memory_type.properties.contains(m::Properties::DEVICE_LOCAL)
             })
             .unwrap();
-        let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
 
-        let resource_cache_image = device.bind_image_memory(&image_memory, 0, image_unbound).unwrap();
+        let resource_cache_image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
+
+        let resource_cache_image = device.bind_image_memory(&resource_cache_image_memory, 0, image_unbound).unwrap();
         let resource_cache_image_srv = device.create_image_view(&resource_cache_image, ColorFormat::SELF, Swizzle::NO, COLOR_RANGE.clone()).unwrap();
 
         let (width, height) = (RENDER_TASK_TEXTURE_WIDTH as u32, TEXTURE_HEIGTH as u32);
@@ -929,9 +933,9 @@ impl<B: gfx::Backend> Device<B> {
                 memory_type.properties.contains(m::Properties::DEVICE_LOCAL)
             })
             .unwrap();
-        let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
+        let render_tasks_image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
 
-        let render_tasks_image = device.bind_image_memory(&image_memory, 0, image_unbound).unwrap();
+        let render_tasks_image = device.bind_image_memory(&render_tasks_image_memory, 0, image_unbound).unwrap();
         let render_tasks_image_srv = device.create_image_view(&render_tasks_image, ColorFormat::SELF, Swizzle::NO, COLOR_RANGE.clone()).unwrap();
 
         // Samplers
@@ -1090,10 +1094,13 @@ impl<B: gfx::Backend> Device<B> {
             resource_cache_image_upload_memory: resource_cache_image_upload_memory,
             resource_cache_image_upload_buffer: resource_cache_image_upload_buffer,
             layers_image: layers_image,
+            layers_image_memory: layers_image_memory,
             layers_image_srv: layers_image_srv,
             render_tasks_image: render_tasks_image,
+            render_tasks_image_memory: render_tasks_image_memory,
             render_tasks_image_srv: render_tasks_image_srv,
             resource_cache_image: resource_cache_image,
+            resource_cache_image_memory: resource_cache_image_memory,
             resource_cache_image_srv: resource_cache_image_srv,
             command_pool: command_pool,
             queue_group: queue_group,
@@ -1681,6 +1688,9 @@ impl<B: gfx::Backend> Device<B> {
         self.device.free_memory(self.layers_image_upload_memory);
         self.device.free_memory(self.render_tasks_image_upload_memory);
         self.device.free_memory(self.resource_cache_image_upload_memory);
+        self.device.free_memory(self.layers_image_memory);
+        self.device.free_memory(self.render_tasks_image_memory);
+        self.device.free_memory(self.resource_cache_image_memory);
         self.device.free_memory(self.buffer_memory);
         self.device.free_memory(self.ibuffer_memory);
         self.device.free_memory(self.lbuffer_memory);
