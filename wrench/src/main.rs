@@ -20,8 +20,9 @@ extern crate env_logger;
 extern crate euclid;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 extern crate font_loader;
-extern crate gleam;
-extern crate glutin;
+#[cfg(feature = "vulkan")]
+extern crate gfx_backend_vulkan as back;
+extern crate gfx_hal as hal;
 extern crate image;
 #[macro_use]
 extern crate lazy_static;
@@ -33,6 +34,7 @@ extern crate serde;
 extern crate serde_json;
 extern crate time;
 extern crate webrender;
+extern crate winit;
 extern crate yaml_rust;
 
 mod binary_frame_reader;
@@ -54,12 +56,12 @@ mod yaml_helper;
 mod cgfont_to_data;
 
 use binary_frame_reader::BinaryFrameReader;
-use gleam::gl;
-use glutin::{ElementState, VirtualKeyCode, WindowProxy};
+use winit::{ElementState, VirtualKeyCode, EventsLoop, EventsLoopProxy};
 use perf::PerfHarness;
-use png::save_flipped;
+//use png::save_flipped;
 use rawtest::RawtestHarness;
 use reftest::{ReftestHarness, ReftestOptions};
+use std::cell::RefCell;
 use std::cmp::{max, min};
 #[cfg(feature = "headless")]
 use std::ffi::CString;
@@ -170,24 +172,17 @@ impl HeadlessContext {
 }
 
 pub enum WindowWrapper {
-    Window(glutin::Window, Rc<gl::Gl>),
-    Headless(HeadlessContext, Rc<gl::Gl>),
+    Window(Rc<winit::Window>, RefCell<EventsLoop>),
+    Headless(HeadlessContext),
 }
 
 pub struct HeadlessEventIterater;
 
 impl WindowWrapper {
-    fn swap_buffers(&self) {
-        match *self {
-            WindowWrapper::Window(ref window, _) => window.swap_buffers().unwrap(),
-            WindowWrapper::Headless(..) => {}
-        }
-    }
-
     fn get_inner_size_pixels(&self) -> (u32, u32) {
         match *self {
             WindowWrapper::Window(ref window, _) => window.get_inner_size_pixels().unwrap(),
-            WindowWrapper::Headless(ref context, _) => (context.width, context.height),
+            WindowWrapper::Headless(ref context) => (context.width, context.height),
         }
     }
 
@@ -198,9 +193,9 @@ impl WindowWrapper {
         }
     }
 
-    fn create_window_proxy(&mut self) -> Option<WindowProxy> {
+    fn create_window_proxy(&mut self) -> Option<EventsLoopProxy> {
         match *self {
-            WindowWrapper::Window(ref window, _) => Some(window.create_window_proxy()),
+            WindowWrapper::Window(_, ref evenst_loop) => Some(evenst_loop.borrow().create_proxy()),
             WindowWrapper::Headless(..) => None,
         }
     }
@@ -212,15 +207,10 @@ impl WindowWrapper {
         }
     }
 
-    pub fn gl(&self) -> &gl::Gl {
+    fn get_window(&self) -> Rc<winit::Window> {
         match *self {
-            WindowWrapper::Window(_, ref gl) | WindowWrapper::Headless(_, ref gl) => &**gl,
-        }
-    }
-
-    pub fn clone_gl(&self) -> Rc<gl::Gl> {
-        match *self {
-            WindowWrapper::Window(_, ref gl) | WindowWrapper::Headless(_, ref gl) => gl.clone(),
+            WindowWrapper::Window(ref window, _) => window.clone(),
+            WindowWrapper::Headless(..) => unreachable!(),
         }
     }
 }
@@ -232,59 +222,16 @@ fn make_window(
     headless: bool,
 ) -> WindowWrapper {
     let wrapper = if headless {
-        let gl = match gl::GlType::default() {
-            gl::GlType::Gl => unsafe {
-                gl::GlFns::load_with(|symbol| {
-                    HeadlessContext::get_proc_address(symbol) as *const _
-                })
-            },
-            gl::GlType::Gles => unsafe {
-                gl::GlesFns::load_with(|symbol| {
-                    HeadlessContext::get_proc_address(symbol) as *const _
-                })
-            },
-        };
-        WindowWrapper::Headless(HeadlessContext::new(size.width, size.height), gl)
+        WindowWrapper::Headless(HeadlessContext::new(size.width, size.height))
     } else {
-        let mut builder = glutin::WindowBuilder::new()
-            .with_gl(glutin::GlRequest::GlThenGles {
-                opengl_version: (3, 2),
-                opengles_version: (3, 0),
-            })
-            .with_dimensions(size.width, size.height);
-        builder.opengl.vsync = vsync;
-        let window = builder.build().unwrap();
-        unsafe {
-            window
-                .make_current()
-                .expect("unable to make context current!");
-        }
-
-        let gl = match window.get_api() {
-            glutin::Api::OpenGl => unsafe {
-                gl::GlFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
-            },
-            glutin::Api::OpenGlEs => unsafe {
-                gl::GlesFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
-            },
-            glutin::Api::WebGl => unimplemented!(),
-        };
-        WindowWrapper::Window(window, gl)
+        let mut events_loop = winit::EventsLoop::new();
+        let winit_window = winit::WindowBuilder::new()
+            .with_dimensions(size.width, size.height)
+            .build(&events_loop)
+            .unwrap();
+        WindowWrapper::Window(Rc::new(winit_window), RefCell::new(events_loop))
     };
-
-    wrapper.gl().clear_color(0.3, 0.0, 0.0, 1.0);
-
-    let gl_version = wrapper.gl().get_string(gl::VERSION);
-    let gl_renderer = wrapper.gl().get_string(gl::RENDERER);
-
-    let dp_ratio = dp_ratio.unwrap_or(wrapper.hidpi_factor());
-    println!("OpenGL version {}, {}", gl_version, gl_renderer);
-    println!(
-        "hidpi factor: {} (native {})",
-        dp_ratio,
-        wrapper.hidpi_factor()
-    );
-
+    //wrapper.gl().clear_color(0.3, 0.0, 0.0, 1.0);
     wrapper
 }
 
@@ -356,6 +303,8 @@ fn main() {
     let is_headless = args.is_present("headless");
 
     let mut window = make_window(size, dp_ratio, args.is_present("vsync"), is_headless);
+    let instance = back::Instance::create("gfx-rs instance", 1);
+    let mut surface = instance.create_surface(&window.get_window());
     let dp_ratio = dp_ratio.unwrap_or(window.hidpi_factor());
     let (width, height) = window.get_inner_size_pixels();
     let dim = DeviceUintSize::new(width, height);
@@ -372,6 +321,8 @@ fn main() {
 
     let mut wrench = Wrench::new(
         &mut window,
+        &instance,
+        &mut surface,
         res_path,
         dp_ratio,
         save_type,
@@ -452,7 +403,7 @@ fn main() {
         }
 
         wrench.render();
-        window.swap_buffers();
+        wrench.renderer.swap_buffers()
     }
 
     let time_start = time::SteadyTime::now();
@@ -511,8 +462,15 @@ fn main() {
         }
 
         let event = match window {
-            WindowWrapper::Headless(..) => glutin::Event::Awakened,
-            WindowWrapper::Window(ref window, _) => window.wait_events().next().unwrap(),
+            WindowWrapper::Headless(..) => winit::Event::Awakened,
+            WindowWrapper::Window(_, ref events_loop) => {
+                let mut window_event = winit::Event::Awakened;
+                events_loop.borrow_mut().run_forever(|e| {
+                    window_event = e;
+                    winit::ControlFlow::Break
+                });
+                window_event
+            }
         };
 
         if let Some(limit) = limit_seconds {
@@ -522,7 +480,7 @@ fn main() {
         }
 
         match event {
-            glutin::Event::Awakened => {
+            winit::Event::Awakened => {
                 let (width, height) = window.get_inner_size_pixels();
                 let dim = DeviceUintSize::new(width, height);
                 wrench.update(dim);
@@ -537,7 +495,7 @@ fn main() {
                 }
 
                 wrench.render();
-                window.swap_buffers();
+                wrench.renderer.swap_buffers();
 
                 let now = time::SteadyTime::now();
                 let dur = now - last;
@@ -593,11 +551,21 @@ fn main() {
                 }
             }
 
-            glutin::Event::Closed => {
+            winit::Event::WindowEvent{ window_id: _, event: winit::WindowEvent::Closed } => {
                 break 'outer;
             }
 
-            glutin::Event::KeyboardInput(ElementState::Pressed, _scan_code, Some(vk)) => match vk {
+            winit::Event::WindowEvent {
+                window_id: _,
+                event: winit::WindowEvent::KeyboardInput {
+                    device_id: _,
+                    input: winit::KeyboardInput {
+                        state: winit::ElementState::Pressed,
+                        virtual_keycode: Some(vk),
+                        ..
+                    }
+                }
+            } => match vk {
                 VirtualKeyCode::Escape => {
                     break 'outer;
                 }
@@ -648,7 +616,7 @@ fn main() {
     }
 
     if is_headless {
-        let pixels = window.gl().read_pixels(
+        /*let pixels = window.gl().read_pixels(
             0,
             0,
             size.width as gl::GLsizei,
@@ -657,7 +625,7 @@ fn main() {
             gl::UNSIGNED_BYTE,
         );
 
-        save_flipped("screenshot.png", pixels, size);
+        save_flipped("screenshot.png", pixels, size);*/
     }
 
     wrench.renderer.deinit();
