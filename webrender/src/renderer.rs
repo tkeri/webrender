@@ -3514,7 +3514,7 @@ impl Renderer {
         );
     }*/
 
-    pub fn read_pixels_rgba8(&self, rect: DeviceUintRect) -> Vec<u8> {
+    pub fn read_pixels_rgba8(&mut self, rect: DeviceUintRect) -> Vec<u8> {
         let mut pixels = vec![0u8; (4 * rect.size.width * rect.size.height) as usize];
         self.read_pixels_into(rect, ReadPixelsFormat::Rgba8, &mut pixels);
         pixels
@@ -3536,11 +3536,12 @@ impl Renderer {
     }*/
 
     pub fn read_pixels_into(
-        &self,
+        &mut self,
         rect: DeviceUintRect,
         format: ReadPixelsFormat,
         output: &mut [u8],
     ) {
+        self.device.read_pixels(rect, output);
         /*let (gl_format, gl_type, size) = match format {
             ReadPixelsFormat::Rgba8 => (gl::RGBA, gl::UNSIGNED_BYTE, 4),
 //            ReadPixelsFormat::Bgra8 => (get_gl_format_bgra(self.device.gl()), gl::UNSIGNED_BYTE, 4),

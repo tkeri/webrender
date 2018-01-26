@@ -1164,4 +1164,85 @@ impl<B: hal::Backend> Device<B> {
         self.device.destroy_fence(frame_fence);
         self.device.destroy_semaphore(frame_semaphore);
     }
+
+    pub fn read_pixels(
+        &mut self,
+        rect: DeviceUintRect,
+        output: &mut [u8],
+    ) {
+
+        let image = &self.frame_images[(self.current_frame_id + 1) % self.framebuffers.len()].0;
+        let stride = mem::size_of::<[u8; 4]>();
+        let download_buffer: Buffer<B> = Buffer::create(
+            &self.device,
+            &self.memory_types,
+            hal::buffer::Usage::TRANSFER_DST,
+            stride,
+            (rect.size.width * rect.size.height) as usize,
+        );
+
+        let copy_submit = {
+            let mut cmd_buffer = self.command_pool.acquire_command_buffer();
+            let image_barrier = hal::memory::Barrier::Image {
+                states: (hal::image::Access::COLOR_ATTACHMENT_WRITE, hal::image::ImageLayout::ColorAttachmentOptimal) ..
+                        (hal::image::Access::TRANSFER_READ, hal::image::ImageLayout::TransferSrcOptimal),
+                target: image,
+                range: COLOR_RANGE.clone(),
+            };
+            cmd_buffer.pipeline_barrier(PipelineStage::TOP_OF_PIPE .. PipelineStage::TRANSFER, &[image_barrier]);
+
+            let buffer_width = rect.size.width * stride as u32;
+            cmd_buffer.copy_image_to_buffer(
+                &image,
+                hal::image::ImageLayout::TransferSrcOptimal,
+                &download_buffer.buffer,
+                &[hal::command::BufferImageCopy {
+                    buffer_offset: 0,
+                    buffer_width: rect.size.width,
+                    buffer_height: rect.size.height,
+                    image_layers: hal::image::SubresourceLayers {
+                        aspects: hal::format::AspectFlags::COLOR,
+                        level: 0,
+                        layers: 0 .. 1,
+                    },
+                    image_offset: hal::command::Offset {
+                        x: rect.origin.x as i32,
+                        y: rect.origin.y as i32,
+                        z: 0,
+                    },
+                    image_extent: hal::device::Extent {
+                        width: rect.size.width as _,
+                        height: rect.size.height as _,
+                        depth: 1 as _,
+                    },
+                }]);
+            let image_barrier = hal::memory::Barrier::Image {
+                states: (hal::image::Access::TRANSFER_READ, hal::image::ImageLayout::TransferSrcOptimal) ..
+                        (hal::image::Access::COLOR_ATTACHMENT_WRITE, hal::image::ImageLayout::ColorAttachmentOptimal),
+                target: image,
+                range: COLOR_RANGE.clone(),
+            };
+            cmd_buffer.pipeline_barrier(PipelineStage::TRANSFER .. PipelineStage::BOTTOM_OF_PIPE, &[image_barrier]);
+            cmd_buffer.finish()
+        };
+
+        let copy_fence = self.device.create_fence(false);
+        let submission = hal::queue::Submission::new()
+            .submit(&[copy_submit]);
+        self.queue_group.queues[0].submit(submission, Some(&copy_fence));
+        self.device.wait_for_fences(&[&copy_fence], hal::device::WaitFor::Any, !0);
+        self.device.destroy_fence(copy_fence);
+
+        let mut reader = self.device
+            .acquire_mapping_reader::<u8>(
+                &download_buffer.buffer,
+                0 .. (rect.size.width * rect.size.height * stride as u32) as u64,
+            )
+            .unwrap();
+        assert_eq!(reader.len(), output.len());
+        for (i, d) in reader.iter().enumerate() {
+            output[i] = *d;
+        }
+        self.device.release_mapping_reader(reader);
+    }
 }
