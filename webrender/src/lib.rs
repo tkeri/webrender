@@ -52,7 +52,7 @@ extern crate thread_profiler;
 #[macro_use]
 extern crate serde;
 #[macro_use]
-extern crate gfx_hal as hal;
+pub extern crate gfx_hal as hal;
 extern crate winit;
 extern crate rand;
 
