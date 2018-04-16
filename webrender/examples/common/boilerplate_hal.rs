@@ -137,7 +137,7 @@ pub fn main_wrapper<E: Example>(
     let mut adapters = instance.enumerate_adapters();
     let adapter = adapters.remove(0);
     let mut surface = instance.create_surface(&window);
-    let (mut renderer, sender) = webrender::Renderer::new(notifier, opts, &window, adapter, &mut surface).unwrap();
+    let (mut renderer, sender) = webrender::Renderer::new(notifier, opts, &window, &adapter, &mut surface).unwrap();
     let api = sender.create_api();
     let document_id = api.add_document(framebuffer_size, 0);
 

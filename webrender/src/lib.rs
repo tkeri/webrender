@@ -51,10 +51,11 @@ extern crate thread_profiler;
 //#[cfg(any(feature = "debugger", feature = "capture", feature = "replay"))]
 #[macro_use]
 extern crate serde;
-#[macro_use]
-pub extern crate gfx_hal as hal;
 extern crate winit;
 extern crate rand;
+
+#[macro_use]
+pub extern crate gfx_hal as hal;
 
 mod batch;
 mod border;

@@ -238,7 +238,7 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
-        let (renderer, sender) = webrender::Renderer::new(notifier, opts, &window.get_window(), adapter, surface).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(notifier, opts, &window.get_window(), &adapter, surface).unwrap();
         let api = sender.create_api();
         let document_id = api.add_document(size, 0);
 

@@ -1597,7 +1597,7 @@ impl<B: hal::Backend> Renderer<B> {
         notifier: Box<RenderNotifier>,
         mut options: RendererOptions,
         mut window: &winit::Window,
-        adapter: hal::Adapter<B>,
+        adapter: &hal::Adapter<B>,
         surface: &mut B::Surface,
     ) -> Result<(Renderer<B>, RenderApiSender), RendererError> {
         let (api_tx, api_rx) = try!{ channel::msg_channel() };

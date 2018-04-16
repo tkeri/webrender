@@ -1872,7 +1872,7 @@ impl<B: hal::Backend> Device<B, hal::Graphics> {
         upload_method: UploadMethod,
         _file_changed_handler: Box<FileWatcherHandler>,
         window: &winit::Window,
-        adapter: hal::Adapter<B>,
+        adapter: &hal::Adapter<B>,
         surface: &mut <B as hal::Backend>::Surface,
         api_capabilities: ApiCapabilities,
     ) -> Self {
@@ -1928,10 +1928,17 @@ impl<B: hal::Backend> Device<B, hal::Graphics> {
         info!("upload memory: {:?}", upload_memory_type);
         info!("download memory: {:?}", &download_memory_type);
 
-        let (device, mut queue_group) =
-            adapter.open_with(1, |family| {
-                surface.supports_queue_family(family)
-            }).unwrap();
+        let queue_family = adapter.queue_families
+            .iter()
+            .find(|family| surface.supports_queue_family(family))
+            .expect("No queue family is able to render to the surface!");
+        let mut gpu = adapter.physical_device
+            .open(vec![(queue_family, vec![1.0])])
+            .unwrap();
+        let device = gpu.device;
+        let queue_group = gpu.queues
+            .take(queue_family.id())
+            .unwrap();
 
         let mut command_pool = device.create_command_pool_typed(
             &queue_group,
