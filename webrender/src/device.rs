@@ -1632,8 +1632,8 @@ impl<B: hal::Backend> Program<B> {
     ) -> hal::command::Submit<B, hal::Graphics, hal::command::MultiShot, hal::command::Primary> {
         let mut cmd_buffer = cmd_pool.acquire_command_buffer(false);
 
-        cmd_buffer.set_viewports(&[viewport.clone()]);
-        cmd_buffer.set_scissors(&[viewport.rect]);
+        cmd_buffer.set_viewports(0, &[viewport.clone()]);
+        cmd_buffer.set_scissors(0, &[viewport.rect]);
         cmd_buffer.bind_graphics_pipeline(
             &self.pipelines.get(&(blend_state, depth_test)).expect(&format!("The blend state {:?} with depth test {:?} not found for {} program!", blend_state, depth_test, self.shader_name)));
         cmd_buffer.bind_vertex_buffers(hal::pso::VertexBufferSet(vec![
@@ -1933,7 +1933,7 @@ impl<B: hal::Backend> Device<B, hal::Graphics> {
             .find(|family| surface.supports_queue_family(family))
             .expect("No queue family is able to render to the surface!");
         let mut gpu = adapter.physical_device
-            .open(vec![(queue_family, vec![1.0])])
+            .open(&[(queue_family, &[1.0])])
             .unwrap();
         let device = gpu.device;
         let queue_group = gpu.queues
@@ -3322,7 +3322,7 @@ impl<B: hal::Backend> Device<B, hal::Graphics> {
         let mut cmd_buffer = self.command_pool.acquire_command_buffer(false);
 
         if let Some(rect) = rect {
-            cmd_buffer.set_scissors(&[
+            cmd_buffer.set_scissors(0, &[
                 hal::pso::Rect {
                     x: rect.origin.x as u16,
                     y: rect.origin.y as u16,
