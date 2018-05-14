@@ -199,7 +199,7 @@ pub fn main_wrapper<E: Example>(
         let mut custom_event = true;
 
         match global_event {
-            winit::Event::WindowEvent { event: winit::WindowEvent::Closed, .. } => return winit::ControlFlow::Break,
+            winit::Event::WindowEvent { event: winit::WindowEvent::CloseRequested, .. } => return winit::ControlFlow::Break,
             winit::Event::WindowEvent {
                 event: winit::WindowEvent::KeyboardInput {
                     input: winit::KeyboardInput {

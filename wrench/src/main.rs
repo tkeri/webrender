@@ -963,7 +963,7 @@ fn main() {
                 do_render = true;
             }
             winit::Event::WindowEvent { event, .. } => match event {
-                winit::WindowEvent::Closed => {
+                winit::WindowEvent::CloseRequested => {
                     return winit::ControlFlow::Break;
                 }
                 winit::WindowEvent::Refresh |

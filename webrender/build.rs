@@ -548,6 +548,7 @@ fn create_desciptor_range_descriptors(count: usize) -> Vec<DescriptorRangeDesc> 
 fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
     let mut descriptors = vec![
         VertexBufferDesc {
+            binding: 0,
             stride: mem::size_of::<Vertex>() as _,
             rate: 0,
         }
@@ -555,6 +556,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
     if file_name.starts_with("cs_blur") {
         descriptors.push(
             VertexBufferDesc {
+                binding: 1,
                 stride: mem::size_of::<BlurInstance>() as _,
                 rate: 1,
             }
@@ -562,6 +564,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
     } else if file_name.starts_with("cs_clip_border") {
         descriptors.push(
             VertexBufferDesc {
+                binding: 1,
                 stride: mem::size_of::<ClipMaskBorderCornerDotDash>() as _,
                 rate: 1,
             }
@@ -569,6 +572,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
     } else if file_name.starts_with("cs_clip") {
         descriptors.push(
             VertexBufferDesc {
+                binding: 1,
                 stride: mem::size_of::<ClipMaskInstance>() as _,
                 rate: 1,
             }
@@ -576,6 +580,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
     } else if file_name.starts_with("debug_color") {
         descriptors = vec![
             VertexBufferDesc {
+                binding: 0,
                 stride: mem::size_of::<DebugColorVertex>() as _,
                 rate: 0,
             },
@@ -583,6 +588,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
     } else if file_name.starts_with("debug_font") {
         descriptors = vec![
             VertexBufferDesc {
+                binding: 0,
                 stride: mem::size_of::<DebugFontVertex>() as _,
                 rate: 0,
             },
@@ -591,6 +597,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
     } else {
         descriptors.push(
             VertexBufferDesc {
+                binding: 1,
                 stride: mem::size_of::<PrimitiveInstance>() as _,
                 rate: 1,
             }

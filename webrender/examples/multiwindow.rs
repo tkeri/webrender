@@ -165,7 +165,7 @@ impl Window {
 
         self.events_loop.poll_events(|global_event| match global_event {
             winit::Event::WindowEvent { event, .. } => match event {
-                winit::WindowEvent::Closed |
+                winit::WindowEvent::CloseRequested |
                 winit::WindowEvent::KeyboardInput {
                     input: winit::KeyboardInput {
                         virtual_keycode: Some(winit::VirtualKeyCode::Escape),

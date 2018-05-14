@@ -1458,10 +1458,13 @@ impl<B: hal::Backend> Program<B> {
         }
         cmd_buffer.bind_graphics_pipeline(
             &self.pipelines.get(&(blend_state, depth_test)).expect(&format!("The blend state {:?} with depth test {:?} not found for {} program!", blend_state, depth_test, self.shader_name)));
-        cmd_buffer.bind_vertex_buffers(hal::pso::VertexBufferSet(vec![
-            (&self.vertex_buffer.buffer, 0),
-            (&self.instance_buffer.buffer.buffer, 0),
-        ]));
+        cmd_buffer.bind_vertex_buffers(
+            0,
+            hal::pso::VertexBufferSet(vec![
+                (&self.vertex_buffer.buffer, 0),
+                (&self.instance_buffer.buffer.buffer, 0),
+            ]),
+        );
 
         if let Some(ref index_buffer) = self.index_buffer {
             cmd_buffer.bind_index_buffer(
@@ -3203,11 +3206,12 @@ impl<B: hal::Backend> Device<B> {
                     &[barrier],
                 );
             }
-            cmd_buffer.clear_color_image(
+            cmd_buffer.clear_image(
                 &img.image,
                 hal::image::Layout::TransferDstOptimal,
-                color_range.clone(),
                 hal::command::ClearColor::Float([color[0], color[1], color[2], color[3]]),
+                hal::command::ClearDepthStencil(0.0, 0),
+                Some(color_range.clone()),
             );
             if let Some(barrier) = img.transit(
                 hal::image::Access::empty(),
@@ -3235,11 +3239,12 @@ impl<B: hal::Backend> Device<B> {
                     &[barrier],
                 );
             }
-            cmd_buffer.clear_depth_stencil_image(
+            cmd_buffer.clear_image(
                 &dimg.image,
                 hal::image::Layout::TransferDstOptimal,
-                dimg.subresource_range.clone(),
-                hal::command::ClearDepthStencil(depth, 0)
+                hal::command::ClearColor::Float([0.0; 4]),
+                hal::command::ClearDepthStencil(depth, 0),
+                Some(dimg.subresource_range.clone()),
             );
             if let Some(barrier) = dimg.transit(
                 hal::image::Access::empty(),
