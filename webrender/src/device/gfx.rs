@@ -1097,7 +1097,7 @@ impl<B: hal::Backend> Program<B> {
             }).collect::<Vec<_>>();
 
             let pipelines = device
-                .create_graphics_pipelines(pipelines_descriptors.as_slice())
+                .create_graphics_pipelines(pipelines_descriptors.as_slice(), None)
                 .into_iter();
 
             pipeline_states.iter()
@@ -2002,41 +2002,36 @@ impl<B: hal::Backend> Device<B> {
         Vec<ImageCore<B>>,
         hal::pso::Viewport,
     ) {
-        let (surface_format, extent) = {
-            let (caps, formats, _present_modes) = surface.compatibility(&adapter.physical_device);
-            let surface_format = formats
-                .map_or(
-                    hal::format::Format::Bgra8Unorm,
-                    |formats| {
-                        formats
-                            .into_iter()
-                            .find(|format| {
-                                format == &hal::format::Format::Bgra8Unorm
-                            })
-                            .unwrap()
-                    },
-                );
-
-            let mut extent = caps.current_extent.unwrap_or(
-                hal::window::Extent2D {
-                    width: window_size.0.max(caps.extents.start.width).min(caps.extents.end.width),
-                    height: window_size.1.max(caps.extents.start.height).min(caps.extents.end.height),
-                }
+        let (caps, formats, _present_modes) = surface.compatibility(&adapter.physical_device);
+        let surface_format = formats
+            .map_or(
+                hal::format::Format::Bgra8Unorm,
+                |formats| {
+                    formats
+                        .into_iter()
+                        .find(|format| {
+                            format == &hal::format::Format::Bgra8Unorm
+                        })
+                        .unwrap()
+                },
             );
 
-            if extent.width == 0 { extent.width = 1; }
-            if extent.height == 0 { extent.height = 1; }
-            (surface_format, extent)
-        };
+        let mut extent = caps.current_extent.unwrap_or(
+            hal::window::Extent2D {
+                width: window_size.0.max(caps.extents.start.width).min(caps.extents.end.width),
+                height: window_size.1.max(caps.extents.start.height).min(caps.extents.end.height),
+            }
+        );
 
-        let swap_config = SwapchainConfig::new()
-            .with_color(surface_format)
-            .with_image_count(MAX_FRAME_COUNT as _)
+        if extent.width == 0 { extent.width = 1; }
+        if extent.height == 0 { extent.height = 1; }
+
+        let swap_config = SwapchainConfig::from_caps(&caps, surface_format)
             .with_image_usage(
                 hal::image::Usage::TRANSFER_SRC | hal::image::Usage::TRANSFER_DST | hal::image::Usage::COLOR_ATTACHMENT
             );
 
-        let (swap_chain, backbuffer) = device.create_swapchain(surface, swap_config, None, &extent);
+        let (swap_chain, backbuffer) = device.create_swapchain(surface, swap_config, None);
         println!("backbuffer={:?}", backbuffer);
         let depth_format = hal::format::Format::D32Float; //maybe d24s8?
         let render_pass = {
@@ -3688,7 +3683,7 @@ impl<B: hal::Backend> Device<B> {
 
     pub fn set_next_frame_id(&mut self) -> bool {
         match self.swap_chain.as_mut().unwrap()
-            .acquire_image(FrameSync::Semaphore(&mut self.image_available_semaphore))
+            .acquire_image(!0, FrameSync::Semaphore(&mut self.image_available_semaphore))
         {
             Ok(id) => {
                 self.current_frame_id = id as _;
