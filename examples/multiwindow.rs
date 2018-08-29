@@ -37,7 +37,7 @@ use std::io::Read;
 use std::marker::PhantomData;
 use webrender::api::*;
 #[cfg(feature = "gfx-hal")]
-use webrender::hal::{self, Instance};
+use webrender::hal::Instance;
 use winit::dpi::LogicalSize;
 
 struct Notifier {
@@ -85,8 +85,6 @@ struct Window {
     epoch: Epoch,
     api: RenderApi,
     font_instance_key: FontInstanceKey,
-    #[cfg(feature = "gfx-hal")]
-    adapter: hal::Adapter<back::Backend>,
     #[cfg(feature = "gfx-hal")]
     instance: back::Instance,
 }
@@ -141,18 +139,25 @@ impl Window {
             (window, instance, adapter, surface)
         };
 
-        let LogicalSize { width, height } = window.get_inner_size().unwrap();
-
-        let framebuffer_size = DeviceUintSize::new(width as u32, height as u32);
+        let device_pixel_ratio = window.get_hidpi_factor() as f32;
+        let framebuffer_size = {
+            let size = window
+                .get_inner_size()
+                .unwrap()
+                .to_physical(device_pixel_ratio as f64);
+            DeviceUintSize::new(size.width as u32, size.height as u32)
+        };
         let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
         let (renderer, sender) = {
             #[cfg(feature = "gfx-hal")]
+            let winit::dpi::LogicalSize { width, height } = window.get_inner_size().unwrap();
+
+            #[cfg(feature = "gfx-hal")]
             let init = webrender::DeviceInit {
-                adapter: &adapter,
+                adapter,
                 surface,
                 window_size: (width as u32, height as u32),
             };
-            let device_pixel_ratio = window.get_hidpi_factor() as f32;
             let opts = webrender::RendererOptions {
                 device_pixel_ratio,
                 clear_color: Some(clear_color),
@@ -187,27 +192,34 @@ impl Window {
             api,
             font_instance_key,
             #[cfg(feature = "gfx-hal")]
-            adapter,
-            #[cfg(feature = "gfx-hal")]
             instance,
         }
     }
 
     fn tick(&mut self) -> bool {
-        #[cfg(not(any(feature = "vulkan", feature = "dx12", feature = "metal")))]
+        #[cfg(not(feature = "gfx-hal"))]
         unsafe {
             self.window.make_current().ok();
         }
         let mut do_exit = false;
         let my_name = &self.name;
         let renderer = &mut self.renderer;
-
         #[cfg(feature = "gfx-hal")]
-        let adapter = &self.adapter;
+        let api = &self.api;
         #[cfg(feature = "gfx-hal")]
-        let instance = &self.instance;
-        #[cfg(feature = "gfx-hal")]
+        let document_id = self.document_id;
         let window = &self.window;
+
+
+        let device_pixel_ratio = self.window.get_hidpi_factor() as f32;
+        let mut framebuffer_size = {
+            let size = window
+                .get_inner_size()
+                .unwrap()
+                .to_physical(device_pixel_ratio as f64);
+            DeviceUintSize::new(size.width as u32, size.height as u32)
+        };
+        let mut layout_size = framebuffer_size.to_f32() / euclid::TypedScale::new(device_pixel_ratio);
 
         self.events_loop.poll_events(|global_event| match global_event {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -234,13 +246,18 @@ impl Window {
                 }
                 #[cfg(feature = "gfx-hal")]
                 winit::WindowEvent::Resized(dims) => {
-                    let init = webrender::DeviceInit {
-                        adapter: adapter,
-                        surface: instance.create_surface(window),
-                        window_size: (dims.width as _, dims.height as _),
-                    };
-
-                    renderer.resize(init);
+                    let new_size = DeviceUintSize::new((dims.width as f32 * device_pixel_ratio) as u32, (dims.height as f32 * device_pixel_ratio) as u32);
+                    if framebuffer_size != new_size {
+                        let real_size = renderer.resize(Some((new_size.width as u32, new_size.height as u32)));
+                        framebuffer_size = real_size;
+                        layout_size = framebuffer_size.to_f32() / euclid::TypedScale::new(device_pixel_ratio);
+                        api.set_window_parameters(
+                            document_id,
+                            framebuffer_size,
+                            DeviceUintRect::new(DeviceUintPoint::zero(), framebuffer_size),
+                            device_pixel_ratio,
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -250,12 +267,6 @@ impl Window {
             return true
         }
 
-        let framebuffer_size = {
-            let LogicalSize { width, height } = self.window.get_inner_size().unwrap();
-            DeviceUintSize::new(width as u32, height as u32)
-        };
-        let device_pixel_ratio = self.window.get_hidpi_factor() as f32;
-        let layout_size = framebuffer_size.to_f32() / euclid::TypedScale::new(device_pixel_ratio);
         let mut txn = Transaction::new();
         let mut builder = DisplayListBuilder::new(self.pipeline_id, layout_size);
 

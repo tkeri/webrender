@@ -557,21 +557,11 @@ fn main() {
 
     #[cfg(feature = "gfx")]
     let instance = back::Instance::create("gfx-rs instance", 1);
-    #[cfg(feature = "gl")]
-    let instance = back::Instance {};
-
-    #[cfg(feature = "gfx")]
-    let adapter = Some(instance.enumerate_adapters().remove(0));
-    #[cfg(feature = "gl")]
-    let adapter = None;
-
-    #[cfg(feature = "gfx")]
-    let surface = instance.create_surface(window.get_window());
 
     #[cfg(feature = "gfx")]
     let init = webrender::DeviceInit {
-        adapter: &adapter.as_ref().unwrap(),
-        surface,
+        adapter: instance.enumerate_adapters().remove(0),
+        surface: instance.create_surface(window.get_window()),
         window_size: (dim.width, dim.height),
     };
 
@@ -601,7 +591,7 @@ fn main() {
     );
 
     if let Some(subargs) = args.subcommand_matches("show") {
-        render(&mut wrench, &mut window, size, &mut events_loop, subargs, &adapter, &instance);
+        render(&mut wrench, &mut window, size, &mut events_loop, subargs);
     } else if let Some(subargs) = args.subcommand_matches("png") {
         let surface = match subargs.value_of("surface") {
             Some("screen") | None => png::ReadSurface::Screen,
@@ -649,8 +639,6 @@ fn render<'a>(
     size: DeviceUintSize,
     events_loop: &mut Option<winit::EventsLoop>,
     subargs: &clap::ArgMatches<'a>,
-    _adapter: &Option<gfx_hal::Adapter<back::Backend>>,
-    _instance: &back::Instance,
 ) {
     let input_path = subargs.value_of("INPUT").map(PathBuf::from).unwrap();
 
@@ -663,13 +651,8 @@ fn render<'a>(
 
         #[cfg(feature = "gfx")]
         {
-            let dim = window.get_window().get_inner_size().unwrap();
-            let init = webrender::DeviceInit {
-                adapter: _adapter.as_ref().unwrap(),
-                surface: _instance.create_surface(window.get_window()),
-                window_size: (dim.width as _, dim.height as _),
-            };
-            let _ = wrench.renderer.resize(Some(init));
+            let dims = window.get_window().get_inner_size().unwrap();
+            let _ = wrench.renderer.resize(Some((dims.width as _, dims.height as _)));
         }
 
         wrench.document_id = captured.document_id;

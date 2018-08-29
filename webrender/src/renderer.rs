@@ -1696,9 +1696,9 @@ impl<B: hal::Backend> Renderer<B>
     }
 
     #[cfg(not(feature = "gleam"))]
-    pub fn resize(&mut self, init: Option<DeviceInit<B>>) -> DeviceUintSize {
+    pub fn resize(&mut self, window_size: Option<(u32, u32)>) -> DeviceUintSize {
         self.shaders.reset();
-        let size = self.device.recreate_swapchain(init);
+        let size = self.device.recreate_swapchain(window_size);
         size
     }
 
