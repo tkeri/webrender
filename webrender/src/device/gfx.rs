@@ -622,11 +622,11 @@ impl<B: hal::Backend> Buffer<B> {
         device: &B::Device,
         memory_types: &[hal::MemoryType],
         usage: hal::buffer::Usage,
-        pitch_alignment: usize,
+        pitch_alignment_mask: usize,
         data_len: usize,
         stride: usize,
     ) -> Self {
-        let buffer_size = (data_len * stride + pitch_alignment) & !pitch_alignment;
+        let buffer_size = (data_len * stride + pitch_alignment_mask) & !pitch_alignment_mask;
         let unbound_buffer = device.create_buffer(buffer_size as u64, usage).unwrap();
         let requirements = device.get_buffer_requirements(&unbound_buffer);
         let memory_type = memory_types
@@ -666,8 +666,8 @@ impl<B: hal::Backend> Buffer<B> {
         device.release_mapping_writer(upload_data);
     }
 
-    pub fn update<T: Copy>(&self, device: &B::Device, data: &[T], offset: usize, alignment: usize) -> usize {
-        let size_aligned = (data.len() * self.stride + alignment) & !alignment;
+    pub fn update<T: Copy>(&self, device: &B::Device, data: &[T], offset: usize, alignment_mask: usize) -> usize {
+        let size_aligned = (data.len() * self.stride + alignment_mask) & !alignment_mask;
         let mut upload_data = device
             .acquire_mapping_writer::<T>(
                 &self.memory,
@@ -705,7 +705,7 @@ pub struct BufferPool<B: hal::Backend> {
     pub buffer: Buffer<B>,
     pub data_stride: usize,
     non_coherent_atom_size: usize,
-    copy_alignment: usize,
+    copy_alignment_mask: usize,
     offset: usize,
     size: usize,
     pub buffer_offset: usize,
@@ -718,14 +718,14 @@ impl<B: hal::Backend> BufferPool<B> {
         usage: hal::buffer::Usage,
         data_stride: usize,
         non_coherent_atom_size: usize,
-        pitch_alignment: usize,
-        copy_alignment: usize,
+        pitch_alignment_mask: usize,
+        copy_alignment_mask: usize,
     ) -> Self {
         let buffer = Buffer::new(
             device,
             memory_types,
             usage,
-            pitch_alignment,
+            pitch_alignment_mask,
             TEXTURE_CACHE_SIZE,
             data_stride,
         );
@@ -733,7 +733,7 @@ impl<B: hal::Backend> BufferPool<B> {
             buffer,
             data_stride,
             non_coherent_atom_size,
-            copy_alignment,
+            copy_alignment_mask,
             offset: 0,
             size: 0,
             buffer_offset: 0,
@@ -759,7 +759,7 @@ impl<B: hal::Backend> BufferPool<B> {
             self.non_coherent_atom_size,
         );
         self.buffer_offset = self.offset;
-        self.offset += (self.size + self.copy_alignment) & !self.copy_alignment;
+        self.offset += (self.size + self.copy_alignment_mask) & !self.copy_alignment_mask;
     }
 
     fn buffer(&self) -> &Buffer<B> {
@@ -791,13 +791,13 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
         usage: hal::buffer::Usage,
         data_stride: usize,
         non_coherent_atom_size: usize,
-        pitch_alignment: usize,
+        pitch_alignment_mask: usize,
     ) -> Self {
         let buffer = Buffer::new(
             device,
             memory_types,
             usage,
-            pitch_alignment,
+            pitch_alignment_mask,
             MAX_INSTANCE_COUNT,
             data_stride,
         );
@@ -847,7 +847,7 @@ pub struct UniformBufferHandler<B: hal::Backend> {
     memory_types: Vec<hal::MemoryType>,
     usage: hal::buffer::Usage,
     data_stride: usize,
-    pitch_alignment: usize,
+    pitch_alignment_mask: usize,
 }
 
 impl<B: hal::Backend> UniformBufferHandler<B> {
@@ -855,7 +855,7 @@ impl<B: hal::Backend> UniformBufferHandler<B> {
         memory_types: &Vec<hal::MemoryType>,
         usage: hal::buffer::Usage,
         data_stride: usize,
-        pitch_alignment: usize,
+        pitch_alignment_mask: usize,
     ) -> Self {
         UniformBufferHandler {
             buffers: vec!(),
@@ -863,7 +863,7 @@ impl<B: hal::Backend> UniformBufferHandler<B> {
             memory_types: memory_types.clone(),
             usage,
             data_stride,
-            pitch_alignment,
+            pitch_alignment_mask,
         }
     }
 
@@ -874,7 +874,7 @@ impl<B: hal::Backend> UniformBufferHandler<B> {
                     device,
                     &self.memory_types,
                     self.usage,
-                    self.pitch_alignment,
+                    self.pitch_alignment_mask,
                     data.len(),
                     self.data_stride,
                 )
@@ -907,7 +907,7 @@ pub struct VertexBufferHandler<B: hal::Backend> {
     memory_types: Vec<hal::MemoryType>,
     usage: hal::buffer::Usage,
     data_stride: usize,
-    pitch_alignment: usize,
+    pitch_alignment_mask: usize,
     pub buffer_len: usize,
 }
 
@@ -918,13 +918,13 @@ impl<B: hal::Backend> VertexBufferHandler<B> {
         usage: hal::buffer::Usage,
         data: &[T],
         data_stride: usize,
-        pitch_alignment: usize,
+        pitch_alignment_mask: usize,
     ) -> Self {
         let buffer = Buffer::new(
             device,
             memory_types,
             usage,
-            pitch_alignment,
+            pitch_alignment_mask,
             data.len(),
             data_stride,
         );
@@ -935,7 +935,7 @@ impl<B: hal::Backend> VertexBufferHandler<B> {
             memory_types: memory_types.clone(),
             usage,
             data_stride,
-            pitch_alignment,
+            pitch_alignment_mask,
         }
     }
 
@@ -948,7 +948,7 @@ impl<B: hal::Backend> VertexBufferHandler<B> {
                     device,
                     &self.memory_types,
                     self.usage,
-                    self.pitch_alignment,
+                    self.pitch_alignment_mask,
                     data.len(),
                     self.data_stride,
                 )
