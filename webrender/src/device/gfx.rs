@@ -418,7 +418,7 @@ impl<B: hal::Backend> ImageCore<B> {
         subresource_range: hal::image::SubresourceRange,
     ) -> Self {
         let image_unbound = device
-            .create_image(kind, mip_levels, format, hal::image::Tiling::Optimal, usage, hal::image::StorageFlags::empty())
+            .create_image(kind, mip_levels, format, hal::image::Tiling::Optimal, usage, hal::image::ViewCapabilities::empty())
             .unwrap();
         let requirements = device.get_image_requirements(&image_unbound);
 
@@ -1010,12 +1010,12 @@ impl<B: hal::Backend> Program<B> {
                 hal::pso::EntryPoint::<B> {
                     entry: ENTRY_NAME,
                     module: &vs_module,
-                    specialization: &[],
+                    specialization: hal::pso::Specialization::default(),
                 },
                 hal::pso::EntryPoint::<B> {
                     entry: ENTRY_NAME,
                     module: &fs_module,
-                    specialization: &[],
+                    specialization: hal::pso::Specialization::default(),
                 },
             );
 
